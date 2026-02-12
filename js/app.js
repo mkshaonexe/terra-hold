@@ -34,7 +34,6 @@ let currentEarthScale = 1.0;
 let lastFrameTime = performance.now();
 let frameCount = 0;
 let fps = 0;
-let earthFollowingHand = false;
 
 // ============================================
 // Progress & Status
@@ -123,7 +122,7 @@ function setupVideoBackground() {
     videoMesh.renderOrder = -1;
     videoMesh.position.z = -500;
 
-    // Mirror horizontally
+    // Mirror horizontally for selfie view
     videoMesh.scale.x = -1;
 
     scene.add(videoMesh);
@@ -181,38 +180,42 @@ async function requestCamera() {
 // Hand Event Handlers
 // ============================================
 function handleLeftHand(data) {
-    earthFollowingHand = true;
-
     const screenW = window.innerWidth;
     const screenH = window.innerHeight;
 
-    // Convert normalized coords to screen space (mirrored X)
-    const x = (data.palmCenter.x - 0.5) * screenW;
+    // FIXED: Negate X to match mirrored video feed
+    // MediaPipe x=0 is left of original camera image = RIGHT side of mirrored display
+    // So we negate: (0.5 - x) maps correctly to screen coordinates
+    const x = (0.5 - data.palmCenter.x) * screenW;
     const y = -(data.palmCenter.y - 0.5) * screenH;
 
-    // Position Earth slightly above the palm
-    earth.setPosition(x, y + 50, 0);
+    // Earth floats directly on the palm (slight Y offset above palm)
+    earth.setPosition(x, y + 40, 0);
 }
 
 function handleRightHand(data) {
-    // Pinch to scale
-    if (data.isPinching) {
-        const scaleDelta = -data.pinchDelta * 20;
-        currentEarthScale = Math.max(0.2, Math.min(4.0, currentEarthScale + scaleDelta));
-        earth.setScale(currentEarthScale);
-    }
+    // ---- PINCH-TO-ZOOM (like phone two-finger zoom) ----
+    // Spread fingers apart = BIGGER Earth
+    // Bring fingers together = SMALLER Earth
+    // Use pinch delta (change in distance) for smooth scaling
+    const scaleDelta = data.pinchDelta * 25;
+    currentEarthScale = Math.max(0.15, Math.min(5.0, currentEarthScale + scaleDelta));
+    earth.setScale(currentEarthScale);
 
-    // Open hand → rotate
-    if (!data.isPinching) {
-        const rotX = data.rotationDelta.y * 12;
-        const rotY = data.rotationDelta.x * 12;
+    // ---- ROTATION from palm movement ----
+    // Only rotate if the movement is significant enough (avoid jitter)
+    const moveThreshold = 0.002;
+    if (Math.abs(data.rotationDelta.x) > moveThreshold ||
+        Math.abs(data.rotationDelta.y) > moveThreshold) {
+        // FIXED: Negate X rotation delta too for mirrored view
+        const rotX = data.rotationDelta.y * 15;
+        const rotY = -data.rotationDelta.x * 15;
         earth.addRotation(rotX, rotY);
     }
 }
 
 function handleHandsLost() {
-    // Earth stays where it is — no snapping
-    earthFollowingHand = false;
+    // Earth stays in place — natural floating effect
 }
 
 // ============================================
@@ -270,13 +273,13 @@ function animate() {
         videoTexture.needsUpdate = true;
     }
 
-    // Update video mesh sizing if needed
+    // Update video mesh size
     if (videoMesh && video.videoWidth && videoMesh.userData.lastW !== video.videoWidth) {
         updateVideoMeshSize();
         videoMesh.userData.lastW = video.videoWidth;
     }
 
-    // Update Earth
+    // Update Earth (smooth lerp + rotation)
     earth.update(1 / 60);
 
     // Render
@@ -314,13 +317,12 @@ async function boot() {
     setStatus('Loading 3D Earth model...');
     try {
         await earth.load(scene, (pct) => {
-            setProgress(35 + pct * 0.4); // 35% to 75%
+            setProgress(35 + pct * 0.4);
             setStatus(`Loading Earth model... ${pct}%`);
         });
     } catch (err) {
         console.error('Failed to load Earth model:', err);
-        setStatus('⚠️ Earth model failed to load. Check console.');
-        // Continue anyway — the app will work without the model visible
+        setStatus('⚠️ Earth model failed — check console');
     }
 
     setProgress(80);
@@ -338,11 +340,10 @@ async function boot() {
     // 6. Setup UI
     setupUI();
 
-    // 7. Wait briefly for hand tracker to initialize
+    // 7. Wait for hand tracker
     setProgress(90);
     setStatus('Finalizing...');
 
-    // Check readiness with a poll (max 5 seconds)
     let waited = 0;
     const checkInterval = setInterval(() => {
         waited += 200;
@@ -352,7 +353,7 @@ async function boot() {
         }
     }, 200);
 
-    // 8. Start render loop immediately
+    // 8. Start render loop
     animate();
 }
 
