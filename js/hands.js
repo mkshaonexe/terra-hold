@@ -1,8 +1,11 @@
 /* ============================================
    TerraHold — Hand Tracking Module (ES Module)
-   MediaPipe Hands integration — uses manual
-   frame sending (no MediaPipe Camera utility)
-   to avoid dual-stream conflicts.
+   
+   DESIGN:
+   - Single hand detected → always POSITION mode
+   - Two hands detected → left = position, right = scale/rotate
+   - Manual frame sending (no MediaPipe Camera)
+   - Optimized for M4 Mac Mini
    ============================================ */
 
 class HandTracker {
@@ -16,8 +19,9 @@ class HandTracker {
         // Hand state
         this.leftHandDetected = false;
         this.rightHandDetected = false;
+        this.handsCount = 0;
 
-        // Smoothed palm positions (normalized 0-1)
+        // Palm positions (normalized 0-1)
         this.leftPalm = { x: 0.5, y: 0.5 };
         this.rightPalm = { x: 0.5, y: 0.5 };
         this.prevRightPalm = { x: 0.5, y: 0.5 };
@@ -26,22 +30,17 @@ class HandTracker {
         this.pinchDistance = 0.15;
         this.prevPinchDistance = 0.15;
 
-        // Smoothing buffers
+        // Smoothing — small buffers for fast response on M4
         this.leftPalmBuffer = [];
         this.rightPalmBuffer = [];
         this.pinchBuffer = [];
-        this.BUFFER_SIZE = 4;
+        this.POSITION_BUFFER_SIZE = 3;  // Fast for position
         this.PINCH_BUFFER_SIZE = 3;
 
         // Callbacks
         this.onLeftHand = null;
         this.onRightHand = null;
         this.onHandsLost = null;
-
-        // Lost hand frame counters
-        this.leftLostFrames = 0;
-        this.rightLostFrames = 0;
-        this.LOST_THRESHOLD = 5;
     }
 
     async init(videoElement) {
@@ -69,35 +68,28 @@ class HandTracker {
 
         this.handsInstance.onResults((results) => this._processResults(results));
 
-        // Send one initial frame to trigger model loading
-        // (Hands model loads lazily on first .send() call)
+        // Initial frame to trigger lazy model loading
         try {
             if (videoElement.readyState >= 2) {
                 await this.handsInstance.send({ image: videoElement });
             }
         } catch (e) {
-            console.log('⏳ Initial frame send skipped, will retry in render loop');
+            console.log('⏳ Initial frame skipped');
         }
 
         this.isReady = true;
-        console.log('✅ Hand tracking initialized (manual frame mode)');
+        console.log('✅ Hand tracking initialized');
     }
 
-    /**
-     * Call this every frame from the render loop.
-     * Sends the current video frame to MediaPipe for processing.
-     */
     async processFrame() {
-        if (this._isProcessing) return; // Skip if still processing previous frame
+        if (this._isProcessing) return;
         if (!this.handsInstance) return;
         if (!this.videoElement || this.videoElement.readyState < 2) return;
 
         this._isProcessing = true;
         try {
             await this.handsInstance.send({ image: this.videoElement });
-        } catch (e) {
-            // Silently handle frame drops
-        }
+        } catch (e) { /* frame drop */ }
         this._isProcessing = false;
     }
 
@@ -107,50 +99,62 @@ class HandTracker {
             console.log('🖐️ First hand tracking result received!');
         }
 
-        let foundLeft = false;
-        let foundRight = false;
+        if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+            this.handsCount = 0;
+            this.leftHandDetected = false;
+            this.rightHandDetected = false;
+            this._updateStatusUI(false, false);
+            if (this.onHandsLost) this.onHandsLost();
+            return;
+        }
 
-        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-            for (let i = 0; i < results.multiHandLandmarks.length; i++) {
-                const landmarks = results.multiHandLandmarks[i];
-                const handedness = results.multiHandedness[i];
+        this.handsCount = results.multiHandLandmarks.length;
 
-                // MediaPipe mirrors: "Right" label = user's LEFT hand
-                const isLeftHand = handedness.label === 'Right';
+        // ★ KEY LOGIC: Strict hand role separation
+        if (this.handsCount === 1) {
+            // SINGLE HAND → always treated as LEFT (position only)
+            // This prevents the handedness misidentification problem
+            const landmarks = results.multiHandLandmarks[0];
+            this.leftHandDetected = true;
+            this.rightHandDetected = false;
+            this._processLeftHand(landmarks);
 
-                if (isLeftHand) {
-                    foundLeft = true;
-                    this.leftLostFrames = 0;
-                    this._processLeftHand(landmarks);
+        } else if (this.handsCount === 2) {
+            // TWO HANDS → figure out which is left and which is right
+            // Use MediaPipe's handedness labels
+            const hand0 = results.multiHandedness[0];
+            const hand1 = results.multiHandedness[1];
+
+            // MediaPipe mirrors: "Right" label = user's LEFT hand
+            const hand0IsLeft = hand0.label === 'Right';
+            const hand1IsLeft = hand1.label === 'Right';
+
+            let leftIdx, rightIdx;
+
+            if (hand0IsLeft && !hand1IsLeft) {
+                leftIdx = 0;
+                rightIdx = 1;
+            } else if (!hand0IsLeft && hand1IsLeft) {
+                leftIdx = 1;
+                rightIdx = 0;
+            } else {
+                // Both same label (rare) — use position: leftmost in view = user's right
+                // Pick the one with smaller x as left hand (appears on right side of mirrored video)
+                const palm0x = results.multiHandLandmarks[0][0].x;
+                const palm1x = results.multiHandLandmarks[1][0].x;
+                if (palm0x > palm1x) {
+                    leftIdx = 0;
+                    rightIdx = 1;
                 } else {
-                    foundRight = true;
-                    this.rightLostFrames = 0;
-                    this._processRightHand(landmarks);
+                    leftIdx = 1;
+                    rightIdx = 0;
                 }
             }
-        }
 
-        // Track lost frames
-        if (!foundLeft) {
-            this.leftLostFrames++;
-            if (this.leftLostFrames > this.LOST_THRESHOLD) {
-                this.leftHandDetected = false;
-            }
-        } else {
             this.leftHandDetected = true;
-        }
-
-        if (!foundRight) {
-            this.rightLostFrames++;
-            if (this.rightLostFrames > this.LOST_THRESHOLD) {
-                this.rightHandDetected = false;
-            }
-        } else {
             this.rightHandDetected = true;
-        }
-
-        if (!this.leftHandDetected && !this.rightHandDetected && this.onHandsLost) {
-            this.onHandsLost();
+            this._processLeftHand(results.multiHandLandmarks[leftIdx]);
+            this._processRightHand(results.multiHandLandmarks[rightIdx]);
         }
 
         this._updateStatusUI(this.leftHandDetected, this.rightHandDetected);
@@ -158,7 +162,7 @@ class HandTracker {
 
     _smoothPosition(buffer, newPos) {
         buffer.push({ ...newPos });
-        if (buffer.length > this.BUFFER_SIZE) buffer.shift();
+        if (buffer.length > this.POSITION_BUFFER_SIZE) buffer.shift();
 
         let sx = 0, sy = 0;
         for (const p of buffer) { sx += p.x; sy += p.y; }
@@ -175,6 +179,7 @@ class HandTracker {
     }
 
     _calculatePalmCenter(landmarks) {
+        // Wrist + MCP joints = stable palm center
         const palmIndices = [0, 5, 9, 13, 17];
         let cx = 0, cy = 0;
         for (const idx of palmIndices) {
@@ -211,7 +216,7 @@ class HandTracker {
         this.prevPinchDistance = this.pinchDistance;
         this.pinchDistance = this._smoothValue(this.pinchBuffer, rawDistance);
 
-        // Rotation delta
+        // Rotation delta from palm movement
         const rotDeltaX = this.rightPalm.x - this.prevRightPalm.x;
         const rotDeltaY = this.rightPalm.y - this.prevRightPalm.y;
 

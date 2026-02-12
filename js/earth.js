@@ -1,7 +1,8 @@
 /* ============================================
    TerraHold — Earth Module (ES Module)
-   Loads a GLTF 3D Earth model and provides
-   smooth position, scale, and rotation controls.
+   GLTF Earth model with fast lerp-based
+   position, scale, and rotation controls.
+   Optimized for M4 Mac Mini (16GB).
    ============================================ */
 
 import * as THREE from 'three';
@@ -13,9 +14,11 @@ class Earth {
         this.model = null;
         this.loaded = false;
 
-        // Smooth interpolation targets
+        // Position — fast lerp for real-time feel
         this.targetPosition = new THREE.Vector3(0, 0, 0);
         this.currentPosition = new THREE.Vector3(0, 0, 0);
+
+        // Scale
         this.targetScale = 1.0;
         this.currentScale = 1.0;
 
@@ -23,6 +26,11 @@ class Earth {
         this.autoRotateSpeed = 0.003;
         this.velocityRotX = 0;
         this.velocityRotY = 0;
+
+        // Lerp factors — tuned for M4 Mac Mini
+        this.POSITION_LERP = 0.28;  // Fast snapping to palm
+        this.SCALE_LERP = 0.18;     // Responsive zoom
+        this.ROT_DAMPING = 0.90;    // Smooth rotation decay
 
         // Atmosphere
         this.atmosphere = null;
@@ -33,18 +41,17 @@ class Earth {
         const textureLoader = new THREE.TextureLoader();
 
         return new Promise((resolve, reject) => {
-            // Pre-load the Earth texture manually
+            // Pre-load texture manually
             const earthTexture = textureLoader.load('earth/textures/Material.002_diffuse.jpeg');
             earthTexture.colorSpace = THREE.SRGBColorSpace;
-            earthTexture.flipY = false; // GLTF textures don't flip Y
+            earthTexture.flipY = false;
 
             loader.load(
                 'earth/scene.gltf',
                 (gltf) => {
                     this.model = gltf.scene;
 
-                    // Apply the texture manually to all meshes
-                    // (because KHR_materials_pbrSpecularGlossiness is deprecated)
+                    // Apply texture (KHR_materials_pbrSpecularGlossiness workaround)
                     this.model.traverse((child) => {
                         if (child.isMesh) {
                             child.material = new THREE.MeshStandardMaterial({
@@ -56,7 +63,7 @@ class Earth {
                         }
                     });
 
-                    // Normalize scale to fit nicely on screen
+                    // Normalize scale
                     const box = new THREE.Box3().setFromObject(this.model);
                     const size = box.getSize(new THREE.Vector3());
                     const maxDim = Math.max(size.x, size.y, size.z);
@@ -65,18 +72,16 @@ class Earth {
 
                     this.model.scale.setScalar(scaleFactor);
 
-                    // Center the model
+                    // Center model
                     const center = box.getCenter(new THREE.Vector3());
                     this.model.position.sub(center.multiplyScalar(scaleFactor));
 
                     this.group.add(this.model);
 
-                    // Add atmosphere glow
+                    // Atmosphere glow
                     this._createAtmosphere(desiredSize / 2);
 
                     scene.add(this.group);
-
-                    // Start visible, centered on screen
                     this.group.visible = true;
                     this.loaded = true;
 
@@ -128,7 +133,7 @@ class Earth {
     }
 
     setScale(scale) {
-        this.targetScale = Math.max(0.2, Math.min(4.0, scale));
+        this.targetScale = Math.max(0.15, Math.min(5.0, scale));
     }
 
     addRotation(dx, dy) {
@@ -136,31 +141,29 @@ class Earth {
         this.velocityRotY += dy;
     }
 
-    update(dt) {
+    update() {
         if (!this.loaded) return;
 
-        // Smooth position lerp
-        this.currentPosition.lerp(this.targetPosition, 0.1);
+        // ★ Fast position lerp — Earth snaps to palm quickly
+        this.currentPosition.lerp(this.targetPosition, this.POSITION_LERP);
         this.group.position.copy(this.currentPosition);
 
-        // Smooth scale lerp
-        this.currentScale += (this.targetScale - this.currentScale) * 0.08;
+        // ★ Responsive scale lerp
+        this.currentScale += (this.targetScale - this.currentScale) * this.SCALE_LERP;
         this.group.scale.setScalar(this.currentScale);
 
         // Auto rotation
         if (this.model) {
             this.model.rotation.y += this.autoRotateSpeed;
-        }
 
-        // Manual rotation with velocity
-        if (this.model) {
+            // Manual rotation velocity
             this.model.rotation.y += this.velocityRotY * 0.08;
             this.model.rotation.x += this.velocityRotX * 0.08;
         }
 
-        // Dampen rotation velocity
-        this.velocityRotX *= 0.92;
-        this.velocityRotY *= 0.92;
+        // Dampen rotation (smooth deceleration)
+        this.velocityRotX *= this.ROT_DAMPING;
+        this.velocityRotY *= this.ROT_DAMPING;
         if (Math.abs(this.velocityRotX) < 0.0001) this.velocityRotX = 0;
         if (Math.abs(this.velocityRotY) < 0.0001) this.velocityRotY = 0;
     }
