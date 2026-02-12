@@ -271,8 +271,37 @@
         updateFPS();
     }
 
+    // ---- Notifications ----
+    function showNotification(message, duration = 5000) {
+        let notif = document.getElementById('notification-toast');
+        if (!notif) {
+            notif = document.createElement('div');
+            notif.id = 'notification-toast';
+            notif.style.cssText = `
+                position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+                background: rgba(239, 83, 80, 0.9); color: white; padding: 12px 24px;
+                border-radius: 8px; font-family: sans-serif; z-index: 10000;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3); text-align: center;
+            `;
+            document.body.appendChild(notif);
+        }
+        notif.textContent = message;
+        notif.classList.remove('hidden');
+        if (duration > 0) {
+            setTimeout(() => {
+                notif.classList.add('hidden');
+                setTimeout(() => notif.remove(), 500); // cleanup
+            }, duration);
+        }
+    }
+
     // ---- Boot Sequence ----
     async function boot() {
+        // Check for file protocol issues
+        if (window.location.protocol === 'file:') {
+            showNotification("⚠️ Running from file:// may block hand tracking. Please use a local server or the Live Demo.", 10000);
+        }
+
         setProgress(10);
 
         // Init Three.js

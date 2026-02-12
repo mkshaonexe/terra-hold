@@ -33,8 +33,11 @@ Control a photorealistic 3D Earth globe floating above your hand — using just 
 
 ### Live Demo
 👉 [**terra-hold on GitHub Pages**](https://mkshaonexe.github.io/terra-hold/)
+*(Recommended — avoiding browser security restrictions)*
 
 ### Run Locally
+**Note:** Opening `index.html` directly (file://) may block hand tracking due to browser security policies.
+
 1. Clone the repo:
    ```bash
    git clone https://github.com/mkshaonexe/terra-hold.git
@@ -44,7 +47,7 @@ Control a photorealistic 3D Earth globe floating above your hand — using just 
    ```bash
    npx serve .
    ```
-3. Open `http://localhost:3000` in **Chrome** with a webcam connected.
+3. Open `http://localhost:3000` in **Chrome**.
 
 ---
 
@@ -55,6 +58,16 @@ Control a photorealistic 3D Earth globe floating above your hand — using just 
 | Left | Open palm | Position the Earth |
 | Right | Pinch (thumb + index) | Scale up/down |
 | Right | Open hand + move | Rotate the Earth |
+
+---
+
+## ❓ Troubleshooting
+
+**"I can see myself but no Earth?"**
+- Ensure you are using the **Live Demo** or a **Local Server** (not opening the file directly).
+- Raise your **LEFT HAND** to spawn the Earth.
+- Ensure your hand is clearly visible and well-lit.
+- Check if the "Left Hand" indicator in the HUD is lit up.
 
 ---
 
@@ -71,14 +84,6 @@ terra-hold/
 │   └── hands.js        # MediaPipe hand tracking
 └── README.md
 ```
-
----
-
-## 📋 Requirements
-
-- Desktop browser (Chrome recommended)
-- Webcam
-- Modern GPU (for smooth 3D rendering)
 
 ---
 
