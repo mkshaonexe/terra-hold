@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TerraHold — 3D Earth AR Visualization</title>
+    <meta name="description" content="Interactive 3D Earth AR visualization with real-time hand tracking. Control a photorealistic Earth globe with your hands using just a webcam.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loader-content">
+            <div class="earth-loader">
+                <div class="loader-ring"></div>
+                <div class="loader-ring"></div>
+                <div class="loader-ring"></div>
+                <div class="loader-globe">🌍</div>
+            </div>
+            <h1 class="loader-title">
+                <span class="title-terra">Terra</span><span class="title-hold">Hold</span>
+            </h1>
+            <p class="loader-subtitle">Initializing AR Experience...</p>
+            <div class="loader-progress">
+                <div class="loader-progress-bar" id="progress-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Camera Permission Error -->
+    <div id="camera-error" class="hidden">
+        <div class="error-content">
+            <div class="error-icon">📷</div>
+            <h2>Camera Access Required</h2>
+            <p>TerraHold needs your webcam to create the AR experience. Please grant camera permission and reload.</p>
+            <button onclick="location.reload()" class="retry-btn">Try Again</button>
+        </div>
+    </div>
+
+    <!-- Instructions Overlay -->
+    <div id="instructions" class="hidden">
+        <div class="instructions-card">
+            <div class="instructions-header">
+                <h2>✋ Hand Controls</h2>
+                <button id="dismiss-instructions" class="close-btn">&times;</button>
+            </div>
+            <div class="instructions-body">
+                <div class="instruction-item">
+                    <div class="instruction-icon">🤚</div>
+                    <div>
+                        <strong>Left Hand</strong>
+                        <p>Position & anchor the Earth on your palm</p>
+                    </div>
+                </div>
+                <div class="instruction-item">
+                    <div class="instruction-icon">🤏</div>
+                    <div>
+                        <strong>Right Hand — Pinch</strong>
+                        <p>Scale the Earth up or down</p>
+                    </div>
+                </div>
+                <div class="instruction-item">
+                    <div class="instruction-icon">✋</div>
+                    <div>
+                        <strong>Right Hand — Open</strong>
+                        <p>Rotate the Earth freely</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+        <div class="hud-top-left">
+            <span class="hud-logo">
+                <span class="title-terra">Terra</span><span class="title-hold">Hold</span>
+            </span>
+        </div>
+        <div class="hud-top-right">
+            <span id="fps-counter" class="hud-badge">-- FPS</span>
+            <button id="toggle-instructions" class="hud-badge hud-btn">?</button>
+        </div>
+        <div class="hud-bottom">
+            <div id="hand-status" class="hand-status-bar">
+                <span id="left-hand-status" class="hand-indicator off">
+                    <span class="dot"></span> Left Hand
+                </span>
+                <span id="right-hand-status" class="hand-indicator off">
+                    <span class="dot"></span> Right Hand
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden video for webcam -->
+    <video id="webcam" autoplay playsinline style="display:none;"></video>
+
+    <!-- Main canvas for Three.js -->
+    <canvas id="render-canvas"></canvas>
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.min.js"></script>
+
+    <!-- App modules -->
+    <script src="js/earth.js"></script>
+    <script src="js/hands.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
