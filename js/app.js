@@ -162,14 +162,9 @@ function handleLeftHand(data) {
 
 // RIGHT HAND → Scale + Rotation ONLY (never called with single hand)
 function handleRightHand(data) {
-    // ---- PINCH-TO-ZOOM ----
-    // Dead zone: ignore tiny changes (noise)
-    const SCALE_DEAD_ZONE = 0.002;
-    if (Math.abs(data.pinchDelta) > SCALE_DEAD_ZONE) {
-        const scaleDelta = data.pinchDelta * 20;
-        currentEarthScale = Math.max(0.15, Math.min(5.0, currentEarthScale + scaleDelta));
-        earth.setScale(currentEarthScale);
-    }
+    // ---- PINCH-TO-ZOOM (Proportional) ----
+    // Use the new state-based logic: data.isZooming + data.scaleFactor
+    earth.setScaleFactor(data.scaleFactor, data.isZooming);
 
     // ---- ROTATION ----
     const ROT_DEAD_ZONE = 0.003;

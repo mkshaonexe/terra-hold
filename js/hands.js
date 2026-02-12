@@ -18,7 +18,10 @@ const CONFIG = {
     BUFFER_SIZE_POSITION: 3,
     BUFFER_SIZE_PINCH: 3,
     MIN_HAND_SEPARATION: 0.18,
-    PINCH_THRESHOLD: 0.15,
+    MIN_HAND_SEPARATION: 0.18,
+    PINCH_THRESHOLD: 0.05,        // Distance to trigger "pinch" state
+    PINCH_RELEASE_THRESHOLD: 0.08, // Distance to exit "pinch" state
+    CLUTCH_VELOCITY_THRESHOLD: 0.02, // Rapid opening speed to disengage
 };
 
 class HandTracker {
@@ -40,8 +43,10 @@ class HandTracker {
         this.prevRightPalm = null;
 
         // Pinch state
-        this.pinchDistance = CONFIG.PINCH_THRESHOLD;
-        this.prevPinchDistance = CONFIG.PINCH_THRESHOLD;
+        this.pinchDistance = 0;
+        this.prevPinchDistance = 0;
+        this.isZooming = false;
+        this.startPinchDistance = 0;
         this._rightHandActive = false;
 
         // Buffers
@@ -254,19 +259,42 @@ class HandTracker {
         const rawDistance = Math.sqrt(dx * dx + dy * dy);
         this.pinchDistance = this._smoothValue(this.pinchBuffer, rawDistance);
 
-        // Only calculate delta AFTER the right hand has settled (2nd+ frame)
-        let pinchDelta = 0;
-        let rotDelta = { x: 0, y: 0 };
+        // ---- STATE MACHINE: PINCH LOGIC ----
+        // 1. Detect rapid opening (CLUTCH)
+        // If distance increases too fast, user is "resetting" hand -> disengage
+        const pinchVelocity = this.pinchDistance - this.prevPinchDistance;
+        const isOpeningFast = pinchVelocity > CONFIG.CLUTCH_VELOCITY_THRESHOLD;
 
+        // 2. State Transitions
+        if (!this.isZooming) {
+            // ENGAGE: Fingers close enough
+            if (this.pinchDistance < CONFIG.PINCH_THRESHOLD) {
+                this.isZooming = true;
+                this.startPinchDistance = this.pinchDistance;
+            }
+        } else {
+            // DISENGAGE: Fingers open wide OR opening too fast (clutch)
+            if (this.pinchDistance > CONFIG.PINCH_RELEASE_THRESHOLD || isOpeningFast) {
+                this.isZooming = false;
+            }
+        }
+
+        // 3. Calculate Factors
+        let scaleFactor = 1.0;
+        if (this.isZooming && this.startPinchDistance > 0.001) {
+            // Proportional zoom: New / Old
+            scaleFactor = this.pinchDistance / this.startPinchDistance;
+        }
+
+        // Rotation delta (only when right hand settled)
+        let rotDelta = { x: 0, y: 0 };
         if (this._rightHandActive && this.prevRightPalm) {
-            pinchDelta = this.pinchDistance - this.prevPinchDistance;
             rotDelta = {
                 x: this.rightPalm.x - this.prevRightPalm.x,
                 y: this.rightPalm.y - this.prevRightPalm.y,
             };
         }
 
-        // Mark right hand as active after first frame (skip first frame's delta)
         this._rightHandActive = true;
         this.prevPinchDistance = this.pinchDistance;
         this.prevRightPalm = { ...this.rightPalm };
@@ -274,8 +302,8 @@ class HandTracker {
         if (this.onRightHand) {
             this.onRightHand({
                 palmCenter: this.rightPalm,
-                pinchDistance: this.pinchDistance,
-                pinchDelta: pinchDelta,
+                isZooming: this.isZooming,
+                scaleFactor: scaleFactor, // 1.0 = no change, 0.5 = half size, etc.
                 rotationDelta: rotDelta,
             });
         }

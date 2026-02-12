@@ -132,8 +132,16 @@ class Earth {
         this.targetPosition.set(x, y, z);
     }
 
-    setScale(scale) {
-        this.targetScale = Math.max(0.15, Math.min(5.0, scale));
+    setScaleFactor(factor, isZooming) {
+        if (isZooming) {
+            if (this.zoomStartScale === undefined || this.zoomStartScale === null) {
+                this.zoomStartScale = this.currentScale;
+            }
+            const newScale = this.zoomStartScale * factor;
+            this.targetScale = Math.max(0.15, Math.min(5.0, newScale));
+        } else {
+            this.zoomStartScale = null;
+        }
     }
 
     addRotation(dx, dy) {
