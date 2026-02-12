@@ -1,339 +1,360 @@
 /* ============================================
-   TerraHold — Main Application
-   Initializes webcam, Three.js scene, and
-   orchestrates Earth + Hand modules.
+   TerraHold — Main Application (ES Module)
+   Orchestrates webcam, Three.js scene, Earth
+   model loading, and hand tracking.
    ============================================ */
 
-(() => {
-    // DOM Elements
-    const loadingScreen = document.getElementById('loading-screen');
-    const progressBar = document.getElementById('progress-bar');
-    const cameraError = document.getElementById('camera-error');
-    const instructions = document.getElementById('instructions');
-    const hud = document.getElementById('hud');
-    const fpsCounter = document.getElementById('fps-counter');
-    const canvas = document.getElementById('render-canvas');
-    const video = document.getElementById('webcam');
-    const dismissBtn = document.getElementById('dismiss-instructions');
-    const toggleInstructionsBtn = document.getElementById('toggle-instructions');
+import * as THREE from 'three';
+import Earth from './earth.js';
+import HandTracker from './hands.js';
 
-    // Three.js
-    let scene, camera, renderer;
-    let videoTexture, videoMesh;
+// ---- DOM ----
+const loadingScreen = document.getElementById('loading-screen');
+const progressBar = document.getElementById('progress-bar');
+const loadingStatus = document.getElementById('loading-status');
+const cameraError = document.getElementById('camera-error');
+const instructions = document.getElementById('instructions');
+const hud = document.getElementById('hud');
+const fpsCounter = document.getElementById('fps-counter');
+const canvas = document.getElementById('render-canvas');
+const video = document.getElementById('webcam');
+const dismissBtn = document.getElementById('dismiss-instructions');
+const toggleInstructionsBtn = document.getElementById('toggle-instructions');
 
-    // State
-    let currentEarthScale = 1.0;
-    let lastFrameTime = performance.now();
-    let frameCount = 0;
-    let fps = 0;
-    let handsReady = false;
-    let firstHandDetected = false;
+// ---- Three.js ----
+let scene, camera, renderer;
+let videoTexture, videoMesh;
 
-    // ---- Progress Animation ----
-    function setProgress(pct) {
-        if (progressBar) progressBar.style.width = pct + '%';
+// ---- Modules ----
+const earth = new Earth();
+const handTracker = new HandTracker();
+
+// ---- State ----
+let currentEarthScale = 1.0;
+let lastFrameTime = performance.now();
+let frameCount = 0;
+let fps = 0;
+let earthFollowingHand = false;
+
+// ============================================
+// Progress & Status
+// ============================================
+function setProgress(pct) {
+    if (progressBar) progressBar.style.width = Math.min(100, pct) + '%';
+}
+
+function setStatus(msg) {
+    if (loadingStatus) loadingStatus.textContent = msg;
+}
+
+// ============================================
+// Three.js Setup
+// ============================================
+function initThreeJS() {
+    scene = new THREE.Scene();
+
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    camera = new THREE.OrthographicCamera(
+        -w / 2, w / 2,
+        h / 2, -h / 2,
+        0.1, 5000
+    );
+    camera.position.z = 1000;
+
+    renderer = new THREE.WebGLRenderer({
+        canvas: canvas,
+        alpha: true,
+        antialias: true,
+    });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    // Lighting for the GLTF model
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight.position.set(5, 3, 7);
+    scene.add(dirLight);
+
+    const fillLight = new THREE.DirectionalLight(0x4fc3f7, 0.4);
+    fillLight.position.set(-5, -2, 3);
+    scene.add(fillLight);
+
+    window.addEventListener('resize', onResize);
+}
+
+function onResize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    camera.left = -w / 2;
+    camera.right = w / 2;
+    camera.top = h / 2;
+    camera.bottom = -h / 2;
+    camera.updateProjectionMatrix();
+
+    renderer.setSize(w, h);
+
+    if (videoMesh) updateVideoMeshSize();
+}
+
+// ============================================
+// Webcam Video Background
+// ============================================
+function setupVideoBackground() {
+    videoTexture = new THREE.VideoTexture(video);
+    videoTexture.minFilter = THREE.LinearFilter;
+    videoTexture.magFilter = THREE.LinearFilter;
+    videoTexture.colorSpace = THREE.SRGBColorSpace;
+
+    const videoMaterial = new THREE.MeshBasicMaterial({
+        map: videoTexture,
+        depthWrite: false,
+        depthTest: false,
+    });
+
+    const planeGeometry = new THREE.PlaneGeometry(1, 1);
+    videoMesh = new THREE.Mesh(planeGeometry, videoMaterial);
+    videoMesh.renderOrder = -1;
+    videoMesh.position.z = -500;
+
+    // Mirror horizontally
+    videoMesh.scale.x = -1;
+
+    scene.add(videoMesh);
+    updateVideoMeshSize();
+}
+
+function updateVideoMeshSize() {
+    if (!videoMesh || !video.videoWidth) return;
+
+    const screenW = window.innerWidth;
+    const screenH = window.innerHeight;
+    const videoAspect = video.videoWidth / video.videoHeight;
+    const screenAspect = screenW / screenH;
+
+    let planeW, planeH;
+    if (screenAspect > videoAspect) {
+        planeW = screenW;
+        planeH = screenW / videoAspect;
+    } else {
+        planeH = screenH;
+        planeW = screenH * videoAspect;
     }
 
-    // ---- Initialize Three.js ----
-    function initThreeJS() {
-        scene = new THREE.Scene();
+    videoMesh.scale.set(-planeW, planeH, 1);
+}
 
-        // Orthographic camera for screen-space rendering
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-        camera = new THREE.OrthographicCamera(
-            -w / 2, w / 2,
-            h / 2, -h / 2,
-            0.1, 2000
-        );
-        camera.position.z = 500;
+// ============================================
+// Camera Access
+// ============================================
+async function requestCamera() {
+    setStatus('Requesting camera access...');
+    setProgress(15);
 
-        renderer = new THREE.WebGLRenderer({
-            canvas: canvas,
-            alpha: true,
-            antialias: true,
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: 'user',
+            },
+            audio: false,
         });
-        renderer.setSize(w, h);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.setClearColor(0x000000, 0);
+        video.srcObject = stream;
+        await video.play();
+        setProgress(30);
+        setStatus('Camera ready ✓');
+        return true;
+    } catch (err) {
+        console.error('Camera access denied:', err);
+        return false;
+    }
+}
 
-        // Handle resize
-        window.addEventListener('resize', onResize);
+// ============================================
+// Hand Event Handlers
+// ============================================
+function handleLeftHand(data) {
+    earthFollowingHand = true;
+
+    const screenW = window.innerWidth;
+    const screenH = window.innerHeight;
+
+    // Convert normalized coords to screen space (mirrored X)
+    const x = (data.palmCenter.x - 0.5) * screenW;
+    const y = -(data.palmCenter.y - 0.5) * screenH;
+
+    // Position Earth slightly above the palm
+    earth.setPosition(x, y + 50, 0);
+}
+
+function handleRightHand(data) {
+    // Pinch to scale
+    if (data.isPinching) {
+        const scaleDelta = -data.pinchDelta * 20;
+        currentEarthScale = Math.max(0.2, Math.min(4.0, currentEarthScale + scaleDelta));
+        earth.setScale(currentEarthScale);
     }
 
-    function onResize() {
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-
-        camera.left = -w / 2;
-        camera.right = w / 2;
-        camera.top = h / 2;
-        camera.bottom = -h / 2;
-        camera.updateProjectionMatrix();
-
-        renderer.setSize(w, h);
-
-        // Update video background
-        if (videoMesh) {
-            updateVideoMeshSize();
-        }
+    // Open hand → rotate
+    if (!data.isPinching) {
+        const rotX = data.rotationDelta.y * 12;
+        const rotY = data.rotationDelta.x * 12;
+        earth.addRotation(rotX, rotY);
     }
+}
 
-    // ---- Webcam Video Background ----
-    function setupVideoBackground() {
-        videoTexture = new THREE.VideoTexture(video);
-        videoTexture.minFilter = THREE.LinearFilter;
-        videoTexture.magFilter = THREE.LinearFilter;
+function handleHandsLost() {
+    // Earth stays where it is — no snapping
+    earthFollowingHand = false;
+}
 
-        const videoMaterial = new THREE.MeshBasicMaterial({
-            map: videoTexture,
-            depthWrite: false,
-            depthTest: false,
-        });
+// ============================================
+// Loading Complete
+// ============================================
+function onFullyLoaded() {
+    setProgress(100);
+    setStatus('Ready!');
 
-        // Create a plane to show the video
-        const planeGeometry = new THREE.PlaneGeometry(1, 1);
-        videoMesh = new THREE.Mesh(planeGeometry, videoMaterial);
-        videoMesh.renderOrder = -1;
-        videoMesh.position.z = -100;
-
-        // Mirror the video horizontally
-        videoMesh.scale.x = -1;
-
-        scene.add(videoMesh);
-        updateVideoMeshSize();
-    }
-
-    function updateVideoMeshSize() {
-        if (!videoMesh || !video.videoWidth) return;
-
-        const screenW = window.innerWidth;
-        const screenH = window.innerHeight;
-        const videoAspect = video.videoWidth / video.videoHeight;
-        const screenAspect = screenW / screenH;
-
-        let planeW, planeH;
-        if (screenAspect > videoAspect) {
-            planeW = screenW;
-            planeH = screenW / videoAspect;
-        } else {
-            planeH = screenH;
-            planeW = screenH * videoAspect;
-        }
-
-        videoMesh.scale.set(-planeW, planeH, 1);
-    }
-
-    // ---- Camera Access ----
-    async function requestCamera() {
-        setProgress(20);
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    facingMode: 'user',
-                },
-                audio: false,
-            });
-            video.srcObject = stream;
-            await video.play();
-            setProgress(40);
-            return true;
-        } catch (err) {
-            console.error('Camera access denied:', err);
-            return false;
-        }
-    }
-
-    // ---- Initialize Hand Tracking ----
-    function initHandTracking() {
-        setProgress(60);
-
-        HandsModule.setCallbacks({
-            onLeftHand: handleLeftHand,
-            onRightHand: handleRightHand,
-            onHandsLost: handleHandsLost,
-        });
-
-        HandsModule.init(video);
-
-        // Wait for hands module to be ready
-        const checkReady = setInterval(() => {
-            if (HandsModule.getIsReady()) {
-                handsReady = true;
-                clearInterval(checkReady);
-                setProgress(100);
-                onFullyLoaded();
-            }
-        }, 200);
-    }
-
-    // ---- Hand Event Handlers ----
-    function handleLeftHand(data) {
-        if (!EarthModule.isVisible()) {
-            EarthModule.show();
-            if (!firstHandDetected) {
-                firstHandDetected = true;
-            }
-        }
-
-        // Convert normalized coordinates to screen coordinates
-        const screenW = window.innerWidth;
-        const screenH = window.innerHeight;
-
-        // Mirror X since video is mirrored
-        const x = (data.palmCenter.x - 0.5) * screenW;
-        const y = -(data.palmCenter.y - 0.5) * screenH;
-
-        // Offset earth slightly above the palm
-        EarthModule.setPosition(x, y + 60, 0);
-    }
-
-    function handleRightHand(data) {
-        // Pinch to scale
-        if (data.isPinching) {
-            // When pinching, use pinch delta to scale
-            const scaleDelta = -data.pinchDelta * 15;
-            currentEarthScale = Math.max(0.3, Math.min(3.0, currentEarthScale + scaleDelta));
-            EarthModule.setScale(currentEarthScale);
-        }
-
-        // Open hand rotation
-        if (!data.isPinching) {
-            const rotX = data.rotationDelta.y * 8;
-            const rotY = data.rotationDelta.x * 8;
-            EarthModule.addRotation(rotX, rotY);
-        }
-    }
-
-    function handleHandsLost() {
-        // Keep earth visible but stop updates — it just floats
-    }
-
-    // ---- Loading Complete ----
-    function onFullyLoaded() {
+    setTimeout(() => {
+        loadingScreen.classList.add('fade-out');
         setTimeout(() => {
-            loadingScreen.classList.add('fade-out');
-            setTimeout(() => {
-                loadingScreen.classList.add('hidden');
-                hud.classList.remove('hidden');
-                instructions.classList.remove('hidden');
-            }, 800);
-        }, 500);
-    }
-
-    // ---- UI Events ----
-    function setupUI() {
-        dismissBtn.addEventListener('click', () => {
-            instructions.classList.add('hidden');
-        });
-
-        toggleInstructionsBtn.addEventListener('click', () => {
-            instructions.classList.toggle('hidden');
-        });
-    }
-
-    // ---- FPS Counter ----
-    function updateFPS() {
-        frameCount++;
-        const currentTime = performance.now();
-        if (currentTime - lastFrameTime >= 1000) {
-            fps = frameCount;
-            frameCount = 0;
-            lastFrameTime = currentTime;
-            if (fpsCounter) fpsCounter.textContent = fps + ' FPS';
-        }
-    }
-
-    // ---- Main Render Loop ----
-    function animate() {
-        requestAnimationFrame(animate);
-
-        // Update video texture
-        if (videoTexture && video.readyState >= video.HAVE_CURRENT_DATA) {
-            videoTexture.needsUpdate = true;
-        }
-
-        // Update video mesh size if video dimensions changed
-        if (videoMesh && video.videoWidth && videoMesh.userData.lastW !== video.videoWidth) {
-            updateVideoMeshSize();
-            videoMesh.userData.lastW = video.videoWidth;
-        }
-
-        // Update Earth
-        EarthModule.update(1 / 60);
-
-        // Render
-        renderer.render(scene, camera);
-
-        // FPS
-        updateFPS();
-    }
-
-    // ---- Notifications ----
-    function showNotification(message, duration = 5000) {
-        let notif = document.getElementById('notification-toast');
-        if (!notif) {
-            notif = document.createElement('div');
-            notif.id = 'notification-toast';
-            notif.style.cssText = `
-                position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-                background: rgba(239, 83, 80, 0.9); color: white; padding: 12px 24px;
-                border-radius: 8px; font-family: sans-serif; z-index: 10000;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3); text-align: center;
-            `;
-            document.body.appendChild(notif);
-        }
-        notif.textContent = message;
-        notif.classList.remove('hidden');
-        if (duration > 0) {
-            setTimeout(() => {
-                notif.classList.add('hidden');
-                setTimeout(() => notif.remove(), 500); // cleanup
-            }, duration);
-        }
-    }
-
-    // ---- Boot Sequence ----
-    async function boot() {
-        // Check for file protocol issues
-        if (window.location.protocol === 'file:') {
-            showNotification("⚠️ Running from file:// may block hand tracking. Please use a local server or the Live Demo.", 10000);
-        }
-
-        setProgress(10);
-
-        // Init Three.js
-        initThreeJS();
-        setProgress(15);
-
-        // Request camera
-        const cameraGranted = await requestCamera();
-        if (!cameraGranted) {
             loadingScreen.classList.add('hidden');
-            cameraError.classList.remove('hidden');
-            return;
-        }
+            hud.classList.remove('hidden');
+            instructions.classList.remove('hidden');
+        }, 800);
+    }, 400);
+}
 
-        // Setup video background
-        setupVideoBackground();
-        setProgress(50);
+// ============================================
+// UI Events
+// ============================================
+function setupUI() {
+    dismissBtn.addEventListener('click', () => {
+        instructions.classList.add('hidden');
+    });
 
-        // Create Earth
-        EarthModule.create(scene);
-        setProgress(55);
+    toggleInstructionsBtn.addEventListener('click', () => {
+        instructions.classList.toggle('hidden');
+    });
+}
 
-        // Setup UI
-        setupUI();
+// ============================================
+// FPS Counter
+// ============================================
+function updateFPS() {
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFrameTime >= 1000) {
+        fps = frameCount;
+        frameCount = 0;
+        lastFrameTime = now;
+        if (fpsCounter) fpsCounter.textContent = fps + ' FPS';
+    }
+}
 
-        // Init hand tracking
-        initHandTracking();
+// ============================================
+// Main Render Loop
+// ============================================
+function animate() {
+    requestAnimationFrame(animate);
 
-        // Start render loop
-        animate();
+    // Update video texture
+    if (videoTexture && video.readyState >= video.HAVE_CURRENT_DATA) {
+        videoTexture.needsUpdate = true;
     }
 
-    // Start
-    boot();
-})();
+    // Update video mesh sizing if needed
+    if (videoMesh && video.videoWidth && videoMesh.userData.lastW !== video.videoWidth) {
+        updateVideoMeshSize();
+        videoMesh.userData.lastW = video.videoWidth;
+    }
+
+    // Update Earth
+    earth.update(1 / 60);
+
+    // Render
+    renderer.render(scene, camera);
+
+    // FPS
+    updateFPS();
+}
+
+// ============================================
+// Boot Sequence
+// ============================================
+async function boot() {
+    console.log('🌍 TerraHold booting...');
+    setProgress(5);
+    setStatus('Initializing 3D engine...');
+
+    // 1. Init Three.js
+    initThreeJS();
+    setProgress(10);
+
+    // 2. Request camera
+    const cameraGranted = await requestCamera();
+    if (!cameraGranted) {
+        loadingScreen.classList.add('hidden');
+        cameraError.classList.remove('hidden');
+        return;
+    }
+
+    // 3. Setup video background
+    setupVideoBackground();
+    setProgress(35);
+
+    // 4. Load Earth GLTF model
+    setStatus('Loading 3D Earth model...');
+    try {
+        await earth.load(scene, (pct) => {
+            setProgress(35 + pct * 0.4); // 35% to 75%
+            setStatus(`Loading Earth model... ${pct}%`);
+        });
+    } catch (err) {
+        console.error('Failed to load Earth model:', err);
+        setStatus('⚠️ Earth model failed to load. Check console.');
+        // Continue anyway — the app will work without the model visible
+    }
+
+    setProgress(80);
+    setStatus('Starting hand tracking...');
+
+    // 5. Init hand tracking
+    handTracker.setCallbacks({
+        onLeftHand: handleLeftHand,
+        onRightHand: handleRightHand,
+        onHandsLost: handleHandsLost,
+    });
+
+    handTracker.init(video);
+
+    // 6. Setup UI
+    setupUI();
+
+    // 7. Wait briefly for hand tracker to initialize
+    setProgress(90);
+    setStatus('Finalizing...');
+
+    // Check readiness with a poll (max 5 seconds)
+    let waited = 0;
+    const checkInterval = setInterval(() => {
+        waited += 200;
+        if (handTracker.isReady || waited > 5000) {
+            clearInterval(checkInterval);
+            onFullyLoaded();
+        }
+    }, 200);
+
+    // 8. Start render loop immediately
+    animate();
+}
+
+// Start!
+boot();

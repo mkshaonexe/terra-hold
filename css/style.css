@@ -24,7 +24,8 @@
     box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
     width: 100%;
     height: 100%;
     overflow: hidden;
@@ -86,7 +87,8 @@ html, body {
 
 .loader-ring {
     position: absolute;
-    top: 0; left: 0;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     border: 2px solid transparent;
@@ -101,7 +103,8 @@ html, body {
 .loader-ring:nth-child(2) {
     border-right-color: var(--accent);
     animation: spin 2s linear infinite reverse;
-    top: 10px; left: 10px;
+    top: 10px;
+    left: 10px;
     width: calc(100% - 20px);
     height: calc(100% - 20px);
 }
@@ -109,7 +112,8 @@ html, body {
 .loader-ring:nth-child(3) {
     border-bottom-color: var(--primary);
     animation: spin 2.5s linear infinite;
-    top: 20px; left: 20px;
+    top: 20px;
+    left: 20px;
     width: calc(100% - 40px);
     height: calc(100% - 40px);
 }
@@ -124,12 +128,21 @@ html, body {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 @keyframes pulse {
-    0%, 100% { transform: translate(-50%, -50%) scale(1); }
-    50% { transform: translate(-50%, -50%) scale(1.15); }
+
+    0%,
+    100% {
+        transform: translate(-50%, -50%) scale(1);
+    }
+
+    50% {
+        transform: translate(-50%, -50%) scale(1.15);
+    }
 }
 
 .loader-title {
@@ -175,14 +188,24 @@ html, body {
     transition: width 0.3s ease;
 }
 
+.loader-status {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-top: 16px;
+    letter-spacing: 0.5px;
+    min-height: 18px;
+}
+
 /* ============================================
    Camera Error
    ============================================ */
 
 #camera-error {
     position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     z-index: 999;
     background: var(--bg-dark);
     display: flex;
@@ -237,8 +260,10 @@ html, body {
 
 #instructions {
     position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     z-index: 50;
     display: flex;
     align-items: center;
@@ -250,8 +275,13 @@ html, body {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 .instructions-card {
@@ -341,8 +371,10 @@ html, body {
 
 #hud {
     position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     z-index: 10;
     pointer-events: none;
 }

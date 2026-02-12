@@ -1,67 +1,93 @@
 /* ============================================
-   TerraHold — Hand Tracking Module
+   TerraHold — Hand Tracking Module (ES Module)
    MediaPipe Hands integration with gesture
    detection for left (position) and right
    (scale/rotation) hand controls.
    ============================================ */
 
-const HandsModule = (() => {
-    let handsInstance = null;
-    let camera = null;
-    let isReady = false;
+class HandTracker {
+    constructor() {
+        this.handsInstance = null;
+        this.camera = null;
+        this.isReady = false;
 
-    // Hand state
-    let leftHandDetected = false;
-    let rightHandDetected = false;
-    let leftPalmCenter = { x: 0.5, y: 0.5 };
-    let rightPalmCenter = { x: 0.5, y: 0.5 };
-    let prevRightPalm = { x: 0.5, y: 0.5 };
-    let rightPinchDistance = 1.0;
-    let prevRightPinchDistance = 1.0;
+        // Hand state
+        this.leftHandDetected = false;
+        this.rightHandDetected = false;
 
-    // Callbacks
-    let onLeftHandUpdate = null;
-    let onRightHandUpdate = null;
-    let onHandsLost = null;
+        // Smoothed palm positions (normalized 0-1)
+        this.leftPalm = { x: 0.5, y: 0.5 };
+        this.rightPalm = { x: 0.5, y: 0.5 };
+        this.prevRightPalm = { x: 0.5, y: 0.5 };
 
-    function init(videoElement, onResults) {
-        handsInstance = new Hands({
+        // Pinch state
+        this.pinchDistance = 1.0;
+        this.prevPinchDistance = 1.0;
+        this.isPinching = false;
+
+        // Smoothing buffers for palm positions
+        this.leftPalmBuffer = [];
+        this.rightPalmBuffer = [];
+        this.BUFFER_SIZE = 5;
+
+        // Callbacks
+        this.onLeftHand = null;
+        this.onRightHand = null;
+        this.onHandsLost = null;
+    }
+
+    init(videoElement) {
+        // Use global Hands from MediaPipe script
+        if (typeof Hands === 'undefined') {
+            console.error('❌ MediaPipe Hands not loaded. Make sure to include the script.');
+            return;
+        }
+
+        this.handsInstance = new Hands({
             locateFile: (file) => {
                 return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`;
             }
         });
 
-        handsInstance.setOptions({
+        this.handsInstance.setOptions({
             maxNumHands: 2,
             modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.6,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.5,
         });
 
-        handsInstance.onResults(processResults);
+        this.handsInstance.onResults((results) => this._processResults(results));
 
-        camera = new Camera(videoElement, {
+        // Use global Camera from MediaPipe script
+        this.camera = new Camera(videoElement, {
             onFrame: async () => {
-                if (handsInstance) {
-                    await handsInstance.send({ image: videoElement });
+                if (this.handsInstance) {
+                    try {
+                        await this.handsInstance.send({ image: videoElement });
+                    } catch (e) {
+                        // Silently handle frame drops
+                    }
                 }
             },
             width: 1280,
             height: 720,
         });
 
-        camera.start().then(() => {
-            isReady = true;
+        this.camera.start().then(() => {
+            this.isReady = true;
+            console.log('✅ Hand tracking ready');
+        }).catch(err => {
+            console.error('❌ Camera start failed:', err);
         });
     }
 
-    function processResults(results) {
-        leftHandDetected = false;
-        rightHandDetected = false;
+    _processResults(results) {
+        this.leftHandDetected = false;
+        this.rightHandDetected = false;
 
         if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-            if (onHandsLost) onHandsLost();
-            updateStatusIndicators(false, false);
+            if (this.onHandsLost) this.onHandsLost();
+            this._updateStatusUI(false, false);
             return;
         }
 
@@ -69,88 +95,94 @@ const HandsModule = (() => {
             const landmarks = results.multiHandLandmarks[i];
             const handedness = results.multiHandedness[i];
 
-            // MediaPipe reports handedness as seen in the image (mirrored)
-            // So "Right" label = user's left hand (mirrored) and vice versa
+            // MediaPipe mirrors: "Right" label = user's LEFT hand
             const isLeftHand = handedness.label === 'Right';
 
             if (isLeftHand) {
-                leftHandDetected = true;
-                processLeftHand(landmarks);
+                this.leftHandDetected = true;
+                this._processLeftHand(landmarks);
             } else {
-                rightHandDetected = true;
-                processRightHand(landmarks);
+                this.rightHandDetected = true;
+                this._processRightHand(landmarks);
             }
         }
 
-        updateStatusIndicators(leftHandDetected, rightHandDetected);
+        this._updateStatusUI(this.leftHandDetected, this.rightHandDetected);
     }
 
-    function processLeftHand(landmarks) {
-        // Calculate palm center from wrist and MCP joints
-        const palmPoints = [
-            landmarks[0],  // Wrist
-            landmarks[5],  // Index MCP
-            landmarks[9],  // Middle MCP
-            landmarks[13], // Ring MCP
-            landmarks[17], // Pinky MCP
-        ];
+    _smoothPosition(buffer, newPos) {
+        buffer.push({ ...newPos });
+        if (buffer.length > this.BUFFER_SIZE) {
+            buffer.shift();
+        }
 
+        let sx = 0, sy = 0;
+        for (const p of buffer) {
+            sx += p.x;
+            sy += p.y;
+        }
+        return {
+            x: sx / buffer.length,
+            y: sy / buffer.length,
+        };
+    }
+
+    _calculatePalmCenter(landmarks) {
+        const palmIndices = [0, 5, 9, 13, 17]; // Wrist + MCP joints
         let cx = 0, cy = 0;
-        palmPoints.forEach(p => {
-            cx += p.x;
-            cy += p.y;
-        });
-        cx /= palmPoints.length;
-        cy /= palmPoints.length;
+        for (const idx of palmIndices) {
+            cx += landmarks[idx].x;
+            cy += landmarks[idx].y;
+        }
+        return {
+            x: cx / palmIndices.length,
+            y: cy / palmIndices.length,
+        };
+    }
 
-        leftPalmCenter = { x: cx, y: cy };
+    _processLeftHand(landmarks) {
+        const rawPalm = this._calculatePalmCenter(landmarks);
+        this.leftPalm = this._smoothPosition(this.leftPalmBuffer, rawPalm);
 
-        if (onLeftHandUpdate) {
-            onLeftHandUpdate({
-                palmCenter: leftPalmCenter,
+        if (this.onLeftHand) {
+            this.onLeftHand({
+                palmCenter: this.leftPalm,
                 landmarks: landmarks,
             });
         }
     }
 
-    function processRightHand(landmarks) {
-        // Palm center
-        const palmPoints = [
-            landmarks[0], landmarks[5], landmarks[9], landmarks[13], landmarks[17],
-        ];
-        let cx = 0, cy = 0;
-        palmPoints.forEach(p => { cx += p.x; cy += p.y; });
-        cx /= palmPoints.length;
-        cy /= palmPoints.length;
+    _processRightHand(landmarks) {
+        const rawPalm = this._calculatePalmCenter(landmarks);
+        this.prevRightPalm = { ...this.rightPalm };
+        this.rightPalm = this._smoothPosition(this.rightPalmBuffer, rawPalm);
 
-        prevRightPalm = { ...rightPalmCenter };
-        rightPalmCenter = { x: cx, y: cy };
-
-        // Pinch detection: thumb tip (4) to index tip (8)
+        // Pinch detection: thumb tip (4) ↔ index tip (8)
         const thumbTip = landmarks[4];
         const indexTip = landmarks[8];
         const dx = thumbTip.x - indexTip.x;
         const dy = thumbTip.y - indexTip.y;
-        prevRightPinchDistance = rightPinchDistance;
-        rightPinchDistance = Math.sqrt(dx * dx + dy * dy);
+        this.prevPinchDistance = this.pinchDistance;
+        this.pinchDistance = Math.sqrt(dx * dx + dy * dy);
+        this.isPinching = this.pinchDistance < 0.07;
 
-        // Calculate rotation delta from palm movement
-        const rotDeltaX = rightPalmCenter.x - prevRightPalm.x;
-        const rotDeltaY = rightPalmCenter.y - prevRightPalm.y;
+        // Rotation delta from palm movement
+        const rotDeltaX = this.rightPalm.x - this.prevRightPalm.x;
+        const rotDeltaY = this.rightPalm.y - this.prevRightPalm.y;
 
-        if (onRightHandUpdate) {
-            onRightHandUpdate({
-                palmCenter: rightPalmCenter,
-                pinchDistance: rightPinchDistance,
-                pinchDelta: rightPinchDistance - prevRightPinchDistance,
+        if (this.onRightHand) {
+            this.onRightHand({
+                palmCenter: this.rightPalm,
+                pinchDistance: this.pinchDistance,
+                pinchDelta: this.pinchDistance - this.prevPinchDistance,
                 rotationDelta: { x: rotDeltaX, y: rotDeltaY },
-                isPinching: rightPinchDistance < 0.06,
+                isPinching: this.isPinching,
                 landmarks: landmarks,
             });
         }
     }
 
-    function updateStatusIndicators(left, right) {
+    _updateStatusUI(left, right) {
         const leftEl = document.getElementById('left-hand-status');
         const rightEl = document.getElementById('right-hand-status');
 
@@ -164,30 +196,11 @@ const HandsModule = (() => {
         }
     }
 
-    function setCallbacks(callbacks) {
-        onLeftHandUpdate = callbacks.onLeftHand || null;
-        onRightHandUpdate = callbacks.onRightHand || null;
-        onHandsLost = callbacks.onHandsLost || null;
+    setCallbacks({ onLeftHand, onRightHand, onHandsLost }) {
+        this.onLeftHand = onLeftHand || null;
+        this.onRightHand = onRightHand || null;
+        this.onHandsLost = onHandsLost || null;
     }
+}
 
-    function getIsReady() {
-        return isReady;
-    }
-
-    function getState() {
-        return {
-            leftDetected: leftHandDetected,
-            rightDetected: rightHandDetected,
-            leftPalm: { ...leftPalmCenter },
-            rightPalm: { ...rightPalmCenter },
-            pinchDistance: rightPinchDistance,
-        };
-    }
-
-    return {
-        init,
-        setCallbacks,
-        getIsReady,
-        getState,
-    };
-})();
+export default HandTracker;
