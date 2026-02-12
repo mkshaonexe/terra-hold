@@ -472,6 +472,21 @@ body {
 .hand-indicator.on .dot {
     background: var(--accent);
     box-shadow: 0 0 10px var(--accent-glow);
+    animation: pulse-green 2s infinite;
+}
+
+@keyframes pulse-green {
+    0% {
+        box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.4);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(0, 230, 118, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(0, 230, 118, 0);
+    }
 }
 
 /* ============================================

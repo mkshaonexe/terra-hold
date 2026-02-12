@@ -34,6 +34,7 @@ let currentEarthScale = 1.0;
 let lastFrameTime = performance.now();
 let frameCount = 0;
 let fps = 0;
+let handsAreActive = false; // Track if any hand is currently controlling
 
 // ============================================
 // Progress & Status
@@ -41,7 +42,6 @@ let fps = 0;
 function setProgress(pct) {
     if (progressBar) progressBar.style.width = Math.min(100, pct) + '%';
 }
-
 function setStatus(msg) {
     if (loadingStatus) loadingStatus.textContent = msg;
 }
@@ -51,35 +51,23 @@ function setStatus(msg) {
 // ============================================
 function initThreeJS() {
     scene = new THREE.Scene();
-
     const w = window.innerWidth;
     const h = window.innerHeight;
 
-    camera = new THREE.OrthographicCamera(
-        -w / 2, w / 2,
-        h / 2, -h / 2,
-        0.1, 5000
-    );
+    camera = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, 5000);
     camera.position.z = 1000;
 
-    renderer = new THREE.WebGLRenderer({
-        canvas: canvas,
-        alpha: true,
-        antialias: true,
-    });
+    renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
     renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-    scene.add(ambientLight);
-
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
     dirLight.position.set(5, 3, 7);
     scene.add(dirLight);
-
     const fillLight = new THREE.DirectionalLight(0x4fc3f7, 0.4);
     fillLight.position.set(-5, -2, 3);
     scene.add(fillLight);
@@ -90,13 +78,9 @@ function initThreeJS() {
 function onResize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
-
-    camera.left = -w / 2;
-    camera.right = w / 2;
-    camera.top = h / 2;
-    camera.bottom = -h / 2;
+    camera.left = -w / 2; camera.right = w / 2;
+    camera.top = h / 2; camera.bottom = -h / 2;
     camera.updateProjectionMatrix();
-
     renderer.setSize(w, h);
     if (videoMesh) updateVideoMeshSize();
 }
@@ -110,40 +94,24 @@ function setupVideoBackground() {
     videoTexture.magFilter = THREE.LinearFilter;
     videoTexture.colorSpace = THREE.SRGBColorSpace;
 
-    const videoMaterial = new THREE.MeshBasicMaterial({
-        map: videoTexture,
-        depthWrite: false,
-        depthTest: false,
-    });
-
-    const planeGeometry = new THREE.PlaneGeometry(1, 1);
-    videoMesh = new THREE.Mesh(planeGeometry, videoMaterial);
+    const mat = new THREE.MeshBasicMaterial({ map: videoTexture, depthWrite: false, depthTest: false });
+    videoMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat);
     videoMesh.renderOrder = -1;
     videoMesh.position.z = -500;
-    videoMesh.scale.x = -1; // Mirror for selfie view
-
+    videoMesh.scale.x = -1; // Mirror
     scene.add(videoMesh);
     updateVideoMeshSize();
 }
 
 function updateVideoMeshSize() {
     if (!videoMesh || !video.videoWidth) return;
-
-    const screenW = window.innerWidth;
-    const screenH = window.innerHeight;
-    const videoAspect = video.videoWidth / video.videoHeight;
-    const screenAspect = screenW / screenH;
-
-    let planeW, planeH;
-    if (screenAspect > videoAspect) {
-        planeW = screenW;
-        planeH = screenW / videoAspect;
-    } else {
-        planeH = screenH;
-        planeW = screenH * videoAspect;
-    }
-
-    videoMesh.scale.set(-planeW, planeH, 1);
+    const sw = window.innerWidth, sh = window.innerHeight;
+    const va = video.videoWidth / video.videoHeight;
+    const sa = sw / sh;
+    let pw, ph;
+    if (sa > va) { pw = sw; ph = sw / va; }
+    else { ph = sh; pw = sh * va; }
+    videoMesh.scale.set(-pw, ph, 1);
 }
 
 // ============================================
@@ -152,28 +120,17 @@ function updateVideoMeshSize() {
 async function requestCamera() {
     setStatus('Requesting camera access...');
     setProgress(15);
-
     try {
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                facingMode: 'user',
-            },
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
             audio: false,
         });
         video.srcObject = stream;
         await video.play();
-
-        // Wait for video to actually have frames
-        await new Promise((resolve) => {
-            if (video.readyState >= 2) {
-                resolve();
-            } else {
-                video.addEventListener('loadeddata', resolve, { once: true });
-            }
+        await new Promise(r => {
+            if (video.readyState >= 2) r();
+            else video.addEventListener('loadeddata', r, { once: true });
         });
-
         console.log(`📷 Camera ready: ${video.videoWidth}x${video.videoHeight}`);
         setProgress(30);
         setStatus('Camera ready ✓');
@@ -187,29 +144,37 @@ async function requestCamera() {
 // ============================================
 // Hand Event Handlers
 // ============================================
-function handleLeftHand(data) {
-    const screenW = window.innerWidth;
-    const screenH = window.innerHeight;
 
-    // MIRRORED: MediaPipe x is in original camera frame,
-    // our video is mirrored, so negate X
-    const x = (0.5 - data.palmCenter.x) * screenW;
-    const y = -(data.palmCenter.y - 0.5) * screenH;
+// LEFT HAND → Position ONLY
+function handleLeftHand(data) {
+    handsAreActive = true;
+
+    const sw = window.innerWidth;
+    const sh = window.innerHeight;
+
+    // Mirror X for selfie view
+    const x = (0.5 - data.palmCenter.x) * sw;
+    const y = -(data.palmCenter.y - 0.5) * sh;
 
     // Earth sits directly on the palm
     earth.setPosition(x, y + 40, 0);
 }
 
+// RIGHT HAND → Scale + Rotation ONLY (never called with single hand)
 function handleRightHand(data) {
-    // PINCH-TO-ZOOM: spread = bigger, close = smaller
-    const scaleDelta = data.pinchDelta * 25;
-    currentEarthScale = Math.max(0.15, Math.min(5.0, currentEarthScale + scaleDelta));
-    earth.setScale(currentEarthScale);
+    // ---- PINCH-TO-ZOOM ----
+    // Dead zone: ignore tiny changes (noise)
+    const SCALE_DEAD_ZONE = 0.002;
+    if (Math.abs(data.pinchDelta) > SCALE_DEAD_ZONE) {
+        const scaleDelta = data.pinchDelta * 20;
+        currentEarthScale = Math.max(0.15, Math.min(5.0, currentEarthScale + scaleDelta));
+        earth.setScale(currentEarthScale);
+    }
 
-    // ROTATION from palm movement
-    const moveThreshold = 0.002;
-    if (Math.abs(data.rotationDelta.x) > moveThreshold ||
-        Math.abs(data.rotationDelta.y) > moveThreshold) {
+    // ---- ROTATION ----
+    const ROT_DEAD_ZONE = 0.003;
+    if (Math.abs(data.rotationDelta.x) > ROT_DEAD_ZONE ||
+        Math.abs(data.rotationDelta.y) > ROT_DEAD_ZONE) {
         const rotX = data.rotationDelta.y * 15;
         const rotY = -data.rotationDelta.x * 15;
         earth.addRotation(rotX, rotY);
@@ -217,7 +182,7 @@ function handleRightHand(data) {
 }
 
 function handleHandsLost() {
-    // Earth stays in place
+    handsAreActive = false;
 }
 
 // ============================================
@@ -226,7 +191,6 @@ function handleHandsLost() {
 function onFullyLoaded() {
     setProgress(100);
     setStatus('Ready!');
-
     setTimeout(() => {
         loadingScreen.classList.add('fade-out');
         setTimeout(() => {
@@ -238,20 +202,15 @@ function onFullyLoaded() {
 }
 
 // ============================================
-// UI Events
+// UI
 // ============================================
 function setupUI() {
-    dismissBtn.addEventListener('click', () => {
-        instructions.classList.add('hidden');
-    });
-
-    toggleInstructionsBtn.addEventListener('click', () => {
-        instructions.classList.toggle('hidden');
-    });
+    dismissBtn.addEventListener('click', () => instructions.classList.add('hidden'));
+    toggleInstructionsBtn.addEventListener('click', () => instructions.classList.toggle('hidden'));
 }
 
 // ============================================
-// FPS Counter
+// FPS
 // ============================================
 function updateFPS() {
     frameCount++;
@@ -265,60 +224,51 @@ function updateFPS() {
 }
 
 // ============================================
-// Main Render Loop
+// Render Loop
 // ============================================
 function animate() {
     requestAnimationFrame(animate);
 
-    // Update video texture
     if (videoTexture && video.readyState >= video.HAVE_CURRENT_DATA) {
         videoTexture.needsUpdate = true;
     }
 
-    // Update video mesh size
     if (videoMesh && video.videoWidth && videoMesh.userData.lastW !== video.videoWidth) {
         updateVideoMeshSize();
         videoMesh.userData.lastW = video.videoWidth;
     }
 
-    // ★ Send current video frame to hand tracker (manual frame mode)
+    // Send frame to hand tracker
     handTracker.processFrame();
 
-    // Update Earth (smooth lerp + rotation)
-    earth.update(1 / 60);
+    // Update Earth (pass whether hands are active to control auto-rotation)
+    earth.update(handsAreActive);
 
-    // Render
     renderer.render(scene, camera);
-
-    // FPS
     updateFPS();
 }
 
 // ============================================
-// Boot Sequence
+// Boot
 // ============================================
 async function boot() {
     console.log('🌍 TerraHold booting...');
     setProgress(5);
     setStatus('Initializing 3D engine...');
 
-    // 1. Three.js
     initThreeJS();
     setProgress(10);
 
-    // 2. Camera
-    const cameraGranted = await requestCamera();
-    if (!cameraGranted) {
+    const camOk = await requestCamera();
+    if (!camOk) {
         loadingScreen.classList.add('hidden');
         cameraError.classList.remove('hidden');
         return;
     }
 
-    // 3. Video background
     setupVideoBackground();
     setProgress(35);
 
-    // 4. Load Earth
     setStatus('Loading 3D Earth model...');
     try {
         await earth.load(scene, (pct) => {
@@ -327,35 +277,26 @@ async function boot() {
         });
     } catch (err) {
         console.error('Failed to load Earth model:', err);
-        setStatus('⚠️ Earth model failed — check console');
+        setStatus('⚠️ Earth model failed');
     }
 
     setProgress(80);
     setStatus('Starting hand tracking...');
 
-    // 5. Hand tracking (NO MediaPipe Camera — we send frames manually)
     handTracker.setCallbacks({
         onLeftHand: handleLeftHand,
         onRightHand: handleRightHand,
         onHandsLost: handleHandsLost,
     });
-
     await handTracker.init(video);
 
-    // 6. UI
     setupUI();
-
     setProgress(95);
     setStatus('Almost ready...');
 
-    // 7. Start render loop (this also starts sending frames to hand tracker)
     animate();
 
-    // 8. Show the app after a brief delay
-    setTimeout(() => {
-        onFullyLoaded();
-    }, 1500);
+    setTimeout(onFullyLoaded, 1500);
 }
 
-// Start!
 boot();

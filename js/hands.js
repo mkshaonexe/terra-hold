@@ -1,12 +1,25 @@
 /* ============================================
    TerraHold — Hand Tracking Module (ES Module)
    
-   DESIGN:
-   - Single hand detected → always POSITION mode
-   - Two hands detected → left = position, right = scale/rotate
-   - Manual frame sending (no MediaPipe Camera)
-   - Optimized for M4 Mac Mini
+   STRICT RULES:
+   ─ Single hand = ONLY position (no resize, no rotate, ever)
+   ─ Two hands = left positions, right scales/rotates
+   ─ Two hands must be spatially separated (prevents
+     MediaPipe from splitting one hand into two)
+   ─ Manual frame sending (no MediaPipe Camera)
+   ─ Optimized for M4 Mac Mini
    ============================================ */
+
+/* ============================================
+   TerraHold — Hand Tracking Module (ES Module)
+   ============================================ */
+
+const CONFIG = {
+    BUFFER_SIZE_POSITION: 3,
+    BUFFER_SIZE_PINCH: 3,
+    MIN_HAND_SEPARATION: 0.18,
+    PINCH_THRESHOLD: 0.15,
+};
 
 class HandTracker {
     constructor() {
@@ -24,18 +37,17 @@ class HandTracker {
         // Palm positions (normalized 0-1)
         this.leftPalm = { x: 0.5, y: 0.5 };
         this.rightPalm = { x: 0.5, y: 0.5 };
-        this.prevRightPalm = { x: 0.5, y: 0.5 };
+        this.prevRightPalm = null;
 
         // Pinch state
-        this.pinchDistance = 0.15;
-        this.prevPinchDistance = 0.15;
+        this.pinchDistance = CONFIG.PINCH_THRESHOLD;
+        this.prevPinchDistance = CONFIG.PINCH_THRESHOLD;
+        this._rightHandActive = false;
 
-        // Smoothing — small buffers for fast response on M4
+        // Buffers
         this.leftPalmBuffer = [];
         this.rightPalmBuffer = [];
         this.pinchBuffer = [];
-        this.POSITION_BUFFER_SIZE = 3;  // Fast for position
-        this.PINCH_BUFFER_SIZE = 3;
 
         // Callbacks
         this.onLeftHand = null;
@@ -68,7 +80,7 @@ class HandTracker {
 
         this.handsInstance.onResults((results) => this._processResults(results));
 
-        // Initial frame to trigger lazy model loading
+        // Trigger lazy model loading
         try {
             if (videoElement.readyState >= 2) {
                 await this.handsInstance.send({ image: videoElement });
@@ -83,8 +95,8 @@ class HandTracker {
 
     async processFrame() {
         if (this._isProcessing) return;
-        if (!this.handsInstance) return;
-        if (!this.videoElement || this.videoElement.readyState < 2) return;
+        if (!this.handsInstance || !this.videoElement) return;
+        if (this.videoElement.readyState < 2) return;
 
         this._isProcessing = true;
         try {
@@ -99,71 +111,100 @@ class HandTracker {
             console.log('🖐️ First hand tracking result received!');
         }
 
+        // No hands
         if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
             this.handsCount = 0;
             this.leftHandDetected = false;
             this.rightHandDetected = false;
+            this._rightHandActive = false;
+            this.prevRightPalm = null;
             this._updateStatusUI(false, false);
             if (this.onHandsLost) this.onHandsLost();
             return;
         }
 
-        this.handsCount = results.multiHandLandmarks.length;
+        const numHands = results.multiHandLandmarks.length;
 
-        // ★ KEY LOGIC: Strict hand role separation
-        if (this.handsCount === 1) {
-            // SINGLE HAND → always treated as LEFT (position only)
-            // This prevents the handedness misidentification problem
-            const landmarks = results.multiHandLandmarks[0];
+        if (numHands === 1) {
+            // ★ SINGLE HAND → ALWAYS position only
+            this.handsCount = 1;
             this.leftHandDetected = true;
             this.rightHandDetected = false;
-            this._processLeftHand(landmarks);
+            this._rightHandActive = false;
+            this.prevRightPalm = null;
+            // Clear right hand buffers so they don't carry over
+            this.rightPalmBuffer = [];
+            this.pinchBuffer = [];
 
-        } else if (this.handsCount === 2) {
-            // TWO HANDS → figure out which is left and which is right
-            // Use MediaPipe's handedness labels
-            const hand0 = results.multiHandedness[0];
-            const hand1 = results.multiHandedness[1];
+            this._processLeftHand(results.multiHandLandmarks[0]);
 
-            // MediaPipe mirrors: "Right" label = user's LEFT hand
-            const hand0IsLeft = hand0.label === 'Right';
-            const hand1IsLeft = hand1.label === 'Right';
+        } else if (numHands === 2) {
+            // ★ TWO HANDS → Check if they're truly separate
+            const palm0 = this._calculatePalmCenter(results.multiHandLandmarks[0]);
+            const palm1 = this._calculatePalmCenter(results.multiHandLandmarks[1]);
 
-            let leftIdx, rightIdx;
+            const dx = palm0.x - palm1.x;
+            const dy = palm0.y - palm1.y;
+            const separation = Math.sqrt(dx * dx + dy * dy);
 
-            if (hand0IsLeft && !hand1IsLeft) {
-                leftIdx = 0;
-                rightIdx = 1;
-            } else if (!hand0IsLeft && hand1IsLeft) {
-                leftIdx = 1;
-                rightIdx = 0;
+            if (separation < CONFIG.MIN_HAND_SEPARATION) {
+                // Too close — MediaPipe is splitting one hand into two.
+                // Treat as single hand (position only).
+                this.handsCount = 1;
+                this.leftHandDetected = true;
+                this.rightHandDetected = false;
+                this._rightHandActive = false;
+                this.prevRightPalm = null;
+                this.rightPalmBuffer = [];
+                this.pinchBuffer = [];
+
+                // Use the average of both as the palm center
+                const avgLandmarks = results.multiHandLandmarks[0]; // Just use first
+                this._processLeftHand(avgLandmarks);
+
             } else {
-                // Both same label (rare) — use position: leftmost in view = user's right
-                // Pick the one with smaller x as left hand (appears on right side of mirrored video)
-                const palm0x = results.multiHandLandmarks[0][0].x;
-                const palm1x = results.multiHandLandmarks[1][0].x;
-                if (palm0x > palm1x) {
-                    leftIdx = 0;
-                    rightIdx = 1;
-                } else {
-                    leftIdx = 1;
-                    rightIdx = 0;
-                }
-            }
+                // Truly two separate hands
+                this.handsCount = 2;
 
-            this.leftHandDetected = true;
-            this.rightHandDetected = true;
-            this._processLeftHand(results.multiHandLandmarks[leftIdx]);
-            this._processRightHand(results.multiHandLandmarks[rightIdx]);
+                // Figure out left vs right
+                const hand0Label = results.multiHandedness[0].label;
+                const hand1Label = results.multiHandedness[1].label;
+
+                // MediaPipe mirrors: "Right" label = user's LEFT hand
+                const hand0IsLeft = hand0Label === 'Right';
+                const hand1IsLeft = hand1Label === 'Right';
+
+                let leftIdx, rightIdx;
+
+                if (hand0IsLeft && !hand1IsLeft) {
+                    leftIdx = 0; rightIdx = 1;
+                } else if (!hand0IsLeft && hand1IsLeft) {
+                    leftIdx = 1; rightIdx = 0;
+                } else {
+                    // Both same label — use spatial position
+                    // In mirrored view, larger X = user's left side
+                    if (palm0.x > palm1.x) {
+                        leftIdx = 0; rightIdx = 1;
+                    } else {
+                        leftIdx = 1; rightIdx = 0;
+                    }
+                }
+
+                this.leftHandDetected = true;
+                this.rightHandDetected = true;
+                this._processLeftHand(results.multiHandLandmarks[leftIdx]);
+                this._processRightHand(results.multiHandLandmarks[rightIdx]);
+            }
         }
 
         this._updateStatusUI(this.leftHandDetected, this.rightHandDetected);
     }
 
+    // ---- Smoothing ----
+
     _smoothPosition(buffer, newPos) {
         buffer.push({ ...newPos });
-        if (buffer.length > this.POSITION_BUFFER_SIZE) buffer.shift();
-
+        if (buffer.length > CONFIG.BUFFER_SIZE_POSITION) buffer.shift();
         let sx = 0, sy = 0;
         for (const p of buffer) { sx += p.x; sy += p.y; }
         return { x: sx / buffer.length, y: sy / buffer.length };
@@ -171,15 +212,13 @@ class HandTracker {
 
     _smoothValue(buffer, newVal) {
         buffer.push(newVal);
-        if (buffer.length > this.PINCH_BUFFER_SIZE) buffer.shift();
-
+        if (buffer.length > CONFIG.BUFFER_SIZE_PINCH) buffer.shift();
         let sum = 0;
         for (const v of buffer) sum += v;
         return sum / buffer.length;
     }
 
     _calculatePalmCenter(landmarks) {
-        // Wrist + MCP joints = stable palm center
         const palmIndices = [0, 5, 9, 13, 17];
         let cx = 0, cy = 0;
         for (const idx of palmIndices) {
@@ -189,21 +228,22 @@ class HandTracker {
         return { x: cx / palmIndices.length, y: cy / palmIndices.length };
     }
 
+    // ---- Hand Processing ----
+
     _processLeftHand(landmarks) {
         const rawPalm = this._calculatePalmCenter(landmarks);
         this.leftPalm = this._smoothPosition(this.leftPalmBuffer, rawPalm);
 
+        // Left hand ONLY sends position data — nothing else
         if (this.onLeftHand) {
             this.onLeftHand({
                 palmCenter: this.leftPalm,
-                landmarks: landmarks,
             });
         }
     }
 
     _processRightHand(landmarks) {
         const rawPalm = this._calculatePalmCenter(landmarks);
-        this.prevRightPalm = { ...this.rightPalm };
         this.rightPalm = this._smoothPosition(this.rightPalmBuffer, rawPalm);
 
         // Pinch distance: thumb tip (4) ↔ index tip (8)
@@ -212,21 +252,31 @@ class HandTracker {
         const dx = thumbTip.x - indexTip.x;
         const dy = thumbTip.y - indexTip.y;
         const rawDistance = Math.sqrt(dx * dx + dy * dy);
-
-        this.prevPinchDistance = this.pinchDistance;
         this.pinchDistance = this._smoothValue(this.pinchBuffer, rawDistance);
 
-        // Rotation delta from palm movement
-        const rotDeltaX = this.rightPalm.x - this.prevRightPalm.x;
-        const rotDeltaY = this.rightPalm.y - this.prevRightPalm.y;
+        // Only calculate delta AFTER the right hand has settled (2nd+ frame)
+        let pinchDelta = 0;
+        let rotDelta = { x: 0, y: 0 };
+
+        if (this._rightHandActive && this.prevRightPalm) {
+            pinchDelta = this.pinchDistance - this.prevPinchDistance;
+            rotDelta = {
+                x: this.rightPalm.x - this.prevRightPalm.x,
+                y: this.rightPalm.y - this.prevRightPalm.y,
+            };
+        }
+
+        // Mark right hand as active after first frame (skip first frame's delta)
+        this._rightHandActive = true;
+        this.prevPinchDistance = this.pinchDistance;
+        this.prevRightPalm = { ...this.rightPalm };
 
         if (this.onRightHand) {
             this.onRightHand({
                 palmCenter: this.rightPalm,
                 pinchDistance: this.pinchDistance,
-                pinchDelta: this.pinchDistance - this.prevPinchDistance,
-                rotationDelta: { x: rotDeltaX, y: rotDeltaY },
-                landmarks: landmarks,
+                pinchDelta: pinchDelta,
+                rotationDelta: rotDelta,
             });
         }
     }

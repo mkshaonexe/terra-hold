@@ -1,9 +1,14 @@
 /* ============================================
    TerraHold — Earth Module (ES Module)
-   GLTF Earth model with fast lerp-based
-   position, scale, and rotation controls.
-   Optimized for M4 Mac Mini (16GB).
    ============================================ */
+
+const CONFIG = {
+    POSITION_LERP: 0.28,  // Fast snapping to palm
+    SCALE_LERP: 0.18,     // Responsive zoom
+    ROT_DAMPING: 0.90,    // Smooth rotation decay
+    AUTO_ROTATE_SPEED: 0.003,
+    MANUAL_ROTATE_FACTOR: 0.08,
+};
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -14,7 +19,7 @@ class Earth {
         this.model = null;
         this.loaded = false;
 
-        // Position — fast lerp for real-time feel
+        // Position
         this.targetPosition = new THREE.Vector3(0, 0, 0);
         this.currentPosition = new THREE.Vector3(0, 0, 0);
 
@@ -23,18 +28,13 @@ class Earth {
         this.currentScale = 1.0;
 
         // Rotation
-        this.autoRotateSpeed = 0.003;
         this.velocityRotX = 0;
         this.velocityRotY = 0;
-
-        // Lerp factors — tuned for M4 Mac Mini
-        this.POSITION_LERP = 0.28;  // Fast snapping to palm
-        this.SCALE_LERP = 0.18;     // Responsive zoom
-        this.ROT_DAMPING = 0.90;    // Smooth rotation decay
 
         // Atmosphere
         this.atmosphere = null;
     }
+
 
     async load(scene, onProgress) {
         const loader = new GLTFLoader();
@@ -141,29 +141,31 @@ class Earth {
         this.velocityRotY += dy;
     }
 
-    update() {
+    update(handsActive = false) {
         if (!this.loaded) return;
 
         // ★ Fast position lerp — Earth snaps to palm quickly
-        this.currentPosition.lerp(this.targetPosition, this.POSITION_LERP);
+        this.currentPosition.lerp(this.targetPosition, CONFIG.POSITION_LERP);
         this.group.position.copy(this.currentPosition);
 
         // ★ Responsive scale lerp
-        this.currentScale += (this.targetScale - this.currentScale) * this.SCALE_LERP;
+        this.currentScale += (this.targetScale - this.currentScale) * CONFIG.SCALE_LERP;
         this.group.scale.setScalar(this.currentScale);
 
-        // Auto rotation
         if (this.model) {
-            this.model.rotation.y += this.autoRotateSpeed;
+            // Auto-rotation only when no hands are controlling
+            if (!handsActive) {
+                this.model.rotation.y += CONFIG.AUTO_ROTATE_SPEED;
+            }
 
-            // Manual rotation velocity
-            this.model.rotation.y += this.velocityRotY * 0.08;
-            this.model.rotation.x += this.velocityRotX * 0.08;
+            // Manual rotation velocity (from right hand gestures)
+            this.model.rotation.y += this.velocityRotY * CONFIG.MANUAL_ROTATE_FACTOR;
+            this.model.rotation.x += this.velocityRotX * CONFIG.MANUAL_ROTATE_FACTOR;
         }
 
         // Dampen rotation (smooth deceleration)
-        this.velocityRotX *= this.ROT_DAMPING;
-        this.velocityRotY *= this.ROT_DAMPING;
+        this.velocityRotX *= CONFIG.ROT_DAMPING;
+        this.velocityRotY *= CONFIG.ROT_DAMPING;
         if (Math.abs(this.velocityRotX) < 0.0001) this.velocityRotX = 0;
         if (Math.abs(this.velocityRotY) < 0.0001) this.velocityRotY = 0;
     }
