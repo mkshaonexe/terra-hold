@@ -72,7 +72,7 @@ function initThreeJS() {
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    // Lighting for the GLTF model
+    // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
     scene.add(ambientLight);
 
@@ -98,7 +98,6 @@ function onResize() {
     camera.updateProjectionMatrix();
 
     renderer.setSize(w, h);
-
     if (videoMesh) updateVideoMeshSize();
 }
 
@@ -121,9 +120,7 @@ function setupVideoBackground() {
     videoMesh = new THREE.Mesh(planeGeometry, videoMaterial);
     videoMesh.renderOrder = -1;
     videoMesh.position.z = -500;
-
-    // Mirror horizontally for selfie view
-    videoMesh.scale.x = -1;
+    videoMesh.scale.x = -1; // Mirror for selfie view
 
     scene.add(videoMesh);
     updateVideoMeshSize();
@@ -167,6 +164,17 @@ async function requestCamera() {
         });
         video.srcObject = stream;
         await video.play();
+
+        // Wait for video to actually have frames
+        await new Promise((resolve) => {
+            if (video.readyState >= 2) {
+                resolve();
+            } else {
+                video.addEventListener('loadeddata', resolve, { once: true });
+            }
+        });
+
+        console.log(`📷 Camera ready: ${video.videoWidth}x${video.videoHeight}`);
         setProgress(30);
         setStatus('Camera ready ✓');
         return true;
@@ -183,31 +191,25 @@ function handleLeftHand(data) {
     const screenW = window.innerWidth;
     const screenH = window.innerHeight;
 
-    // FIXED: Negate X to match mirrored video feed
-    // MediaPipe x=0 is left of original camera image = RIGHT side of mirrored display
-    // So we negate: (0.5 - x) maps correctly to screen coordinates
+    // MIRRORED: MediaPipe x is in original camera frame,
+    // our video is mirrored, so negate X
     const x = (0.5 - data.palmCenter.x) * screenW;
     const y = -(data.palmCenter.y - 0.5) * screenH;
 
-    // Earth floats directly on the palm (slight Y offset above palm)
+    // Earth sits directly on the palm
     earth.setPosition(x, y + 40, 0);
 }
 
 function handleRightHand(data) {
-    // ---- PINCH-TO-ZOOM (like phone two-finger zoom) ----
-    // Spread fingers apart = BIGGER Earth
-    // Bring fingers together = SMALLER Earth
-    // Use pinch delta (change in distance) for smooth scaling
+    // PINCH-TO-ZOOM: spread = bigger, close = smaller
     const scaleDelta = data.pinchDelta * 25;
     currentEarthScale = Math.max(0.15, Math.min(5.0, currentEarthScale + scaleDelta));
     earth.setScale(currentEarthScale);
 
-    // ---- ROTATION from palm movement ----
-    // Only rotate if the movement is significant enough (avoid jitter)
+    // ROTATION from palm movement
     const moveThreshold = 0.002;
     if (Math.abs(data.rotationDelta.x) > moveThreshold ||
         Math.abs(data.rotationDelta.y) > moveThreshold) {
-        // FIXED: Negate X rotation delta too for mirrored view
         const rotX = data.rotationDelta.y * 15;
         const rotY = -data.rotationDelta.x * 15;
         earth.addRotation(rotX, rotY);
@@ -215,7 +217,7 @@ function handleRightHand(data) {
 }
 
 function handleHandsLost() {
-    // Earth stays in place — natural floating effect
+    // Earth stays in place
 }
 
 // ============================================
@@ -279,6 +281,9 @@ function animate() {
         videoMesh.userData.lastW = video.videoWidth;
     }
 
+    // ★ Send current video frame to hand tracker (manual frame mode)
+    handTracker.processFrame();
+
     // Update Earth (smooth lerp + rotation)
     earth.update(1 / 60);
 
@@ -297,11 +302,11 @@ async function boot() {
     setProgress(5);
     setStatus('Initializing 3D engine...');
 
-    // 1. Init Three.js
+    // 1. Three.js
     initThreeJS();
     setProgress(10);
 
-    // 2. Request camera
+    // 2. Camera
     const cameraGranted = await requestCamera();
     if (!cameraGranted) {
         loadingScreen.classList.add('hidden');
@@ -309,11 +314,11 @@ async function boot() {
         return;
     }
 
-    // 3. Setup video background
+    // 3. Video background
     setupVideoBackground();
     setProgress(35);
 
-    // 4. Load Earth GLTF model
+    // 4. Load Earth
     setStatus('Loading 3D Earth model...');
     try {
         await earth.load(scene, (pct) => {
@@ -328,33 +333,28 @@ async function boot() {
     setProgress(80);
     setStatus('Starting hand tracking...');
 
-    // 5. Init hand tracking
+    // 5. Hand tracking (NO MediaPipe Camera — we send frames manually)
     handTracker.setCallbacks({
         onLeftHand: handleLeftHand,
         onRightHand: handleRightHand,
         onHandsLost: handleHandsLost,
     });
 
-    handTracker.init(video);
+    await handTracker.init(video);
 
-    // 6. Setup UI
+    // 6. UI
     setupUI();
 
-    // 7. Wait for hand tracker
-    setProgress(90);
-    setStatus('Finalizing...');
+    setProgress(95);
+    setStatus('Almost ready...');
 
-    let waited = 0;
-    const checkInterval = setInterval(() => {
-        waited += 200;
-        if (handTracker.isReady || waited > 5000) {
-            clearInterval(checkInterval);
-            onFullyLoaded();
-        }
-    }, 200);
-
-    // 8. Start render loop
+    // 7. Start render loop (this also starts sending frames to hand tracker)
     animate();
+
+    // 8. Show the app after a brief delay
+    setTimeout(() => {
+        onFullyLoaded();
+    }, 1500);
 }
 
 // Start!

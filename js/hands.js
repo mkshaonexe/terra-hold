@@ -1,15 +1,17 @@
 /* ============================================
    TerraHold — Hand Tracking Module (ES Module)
-   MediaPipe Hands integration with gesture
-   detection for left (position) and right
-   (scale/rotation) hand controls.
+   MediaPipe Hands integration — uses manual
+   frame sending (no MediaPipe Camera utility)
+   to avoid dual-stream conflicts.
    ============================================ */
 
 class HandTracker {
     constructor() {
         this.handsInstance = null;
-        this.camera = null;
+        this.videoElement = null;
         this.isReady = false;
+        this._isProcessing = false;
+        this._firstResultReceived = false;
 
         // Hand state
         this.leftHandDetected = false;
@@ -23,9 +25,8 @@ class HandTracker {
         // Pinch state
         this.pinchDistance = 0.15;
         this.prevPinchDistance = 0.15;
-        this.isPinching = false;
 
-        // Smoothing buffers for palm positions
+        // Smoothing buffers
         this.leftPalmBuffer = [];
         this.rightPalmBuffer = [];
         this.pinchBuffer = [];
@@ -37,17 +38,21 @@ class HandTracker {
         this.onRightHand = null;
         this.onHandsLost = null;
 
-        // Lost hand tracking
+        // Lost hand frame counters
         this.leftLostFrames = 0;
         this.rightLostFrames = 0;
-        this.LOST_THRESHOLD = 5; // frames before considering hand truly lost
+        this.LOST_THRESHOLD = 5;
     }
 
-    init(videoElement) {
+    async init(videoElement) {
+        this.videoElement = videoElement;
+
         if (typeof Hands === 'undefined') {
             console.error('❌ MediaPipe Hands not loaded.');
             return;
         }
+
+        console.log('🖐️ Initializing MediaPipe Hands...');
 
         this.handsInstance = new Hands({
             locateFile: (file) => {
@@ -58,33 +63,50 @@ class HandTracker {
         this.handsInstance.setOptions({
             maxNumHands: 2,
             modelComplexity: 1,
-            minDetectionConfidence: 0.6,
-            minTrackingConfidence: 0.5,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.4,
         });
 
         this.handsInstance.onResults((results) => this._processResults(results));
 
-        this.camera = new Camera(videoElement, {
-            onFrame: async () => {
-                if (this.handsInstance) {
-                    try {
-                        await this.handsInstance.send({ image: videoElement });
-                    } catch (e) { /* frame drop */ }
-                }
-            },
-            width: 1280,
-            height: 720,
-        });
+        // Send one initial frame to trigger model loading
+        // (Hands model loads lazily on first .send() call)
+        try {
+            if (videoElement.readyState >= 2) {
+                await this.handsInstance.send({ image: videoElement });
+            }
+        } catch (e) {
+            console.log('⏳ Initial frame send skipped, will retry in render loop');
+        }
 
-        this.camera.start().then(() => {
-            this.isReady = true;
-            console.log('✅ Hand tracking ready');
-        }).catch(err => {
-            console.error('❌ Camera start failed:', err);
-        });
+        this.isReady = true;
+        console.log('✅ Hand tracking initialized (manual frame mode)');
+    }
+
+    /**
+     * Call this every frame from the render loop.
+     * Sends the current video frame to MediaPipe for processing.
+     */
+    async processFrame() {
+        if (this._isProcessing) return; // Skip if still processing previous frame
+        if (!this.handsInstance) return;
+        if (!this.videoElement || this.videoElement.readyState < 2) return;
+
+        this._isProcessing = true;
+        try {
+            await this.handsInstance.send({ image: this.videoElement });
+        } catch (e) {
+            // Silently handle frame drops
+        }
+        this._isProcessing = false;
     }
 
     _processResults(results) {
+        if (!this._firstResultReceived) {
+            this._firstResultReceived = true;
+            console.log('🖐️ First hand tracking result received!');
+        }
+
         let foundLeft = false;
         let foundRight = false;
 
@@ -108,7 +130,7 @@ class HandTracker {
             }
         }
 
-        // Track lost frames for each hand
+        // Track lost frames
         if (!foundLeft) {
             this.leftLostFrames++;
             if (this.leftLostFrames > this.LOST_THRESHOLD) {
@@ -134,45 +156,32 @@ class HandTracker {
         this._updateStatusUI(this.leftHandDetected, this.rightHandDetected);
     }
 
-    _smoothPosition(buffer, newPos, bufferSize) {
+    _smoothPosition(buffer, newPos) {
         buffer.push({ ...newPos });
-        if (buffer.length > (bufferSize || this.BUFFER_SIZE)) {
-            buffer.shift();
-        }
+        if (buffer.length > this.BUFFER_SIZE) buffer.shift();
 
         let sx = 0, sy = 0;
-        for (const p of buffer) {
-            sx += p.x;
-            sy += p.y;
-        }
-        return {
-            x: sx / buffer.length,
-            y: sy / buffer.length,
-        };
+        for (const p of buffer) { sx += p.x; sy += p.y; }
+        return { x: sx / buffer.length, y: sy / buffer.length };
     }
 
-    _smoothValue(buffer, newVal, bufferSize) {
+    _smoothValue(buffer, newVal) {
         buffer.push(newVal);
-        if (buffer.length > (bufferSize || this.PINCH_BUFFER_SIZE)) {
-            buffer.shift();
-        }
+        if (buffer.length > this.PINCH_BUFFER_SIZE) buffer.shift();
+
         let sum = 0;
         for (const v of buffer) sum += v;
         return sum / buffer.length;
     }
 
     _calculatePalmCenter(landmarks) {
-        // Use wrist + all MCP joints for stable palm center
         const palmIndices = [0, 5, 9, 13, 17];
         let cx = 0, cy = 0;
         for (const idx of palmIndices) {
             cx += landmarks[idx].x;
             cy += landmarks[idx].y;
         }
-        return {
-            x: cx / palmIndices.length,
-            y: cy / palmIndices.length,
-        };
+        return { x: cx / palmIndices.length, y: cy / palmIndices.length };
     }
 
     _processLeftHand(landmarks) {
@@ -202,7 +211,7 @@ class HandTracker {
         this.prevPinchDistance = this.pinchDistance;
         this.pinchDistance = this._smoothValue(this.pinchBuffer, rawDistance);
 
-        // Rotation delta from palm movement
+        // Rotation delta
         const rotDeltaX = this.rightPalm.x - this.prevRightPalm.x;
         const rotDeltaY = this.rightPalm.y - this.prevRightPalm.y;
 
