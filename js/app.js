@@ -217,12 +217,16 @@ function handleLeftHand(data) {
         // If between Open and Fist (1-3 fingers), keep `earthVisibleState` as is.
     }
 
+    // Store Fist State Global for "Brake" logic
+    isLeftFist = data.isFist;
+
     earth.setVisible(earthVisibleState);
 
     updateSkeleton(data.landmarks, 'left');
 }
 
 let earthVisibleState = true; // Default to visible
+let isLeftFist = false;       // Track left hand brake state
 
 // RIGHT HAND → Scale + Rotation ONLY (never called with single hand)
 function handleRightHand(data) {
@@ -253,13 +257,19 @@ function handleRightHand(data) {
 
     // ---- ROTATION ----
     // Only rotate if NOT pinching (exclusive mode)
-    if (settings.enableManualRotate && !isPinching) {
+    // ---- ROTATION (Horizontal Swipe Only) ----
+    // Only rotate if NOT pinching (exclusive mode)
+    // AND if Left Hand is NOT a fist (Brake)
+    if (settings.enableManualRotate && !isPinching && !isLeftFist) {
         const ROT_DEAD_ZONE = 0.003;
-        if (Math.abs(data.rotationDelta.x) > ROT_DEAD_ZONE ||
-            Math.abs(data.rotationDelta.y) > ROT_DEAD_ZONE) {
-            const rotX = data.rotationDelta.y * 15;
-            const rotY = -data.rotationDelta.x * 15;
-            earth.addRotation(rotX, rotY);
+
+        // Only check Horizontal Delta (x)
+        if (Math.abs(data.rotationDelta.x) > ROT_DEAD_ZONE) {
+            // Map X movement to Y rotation (Yaw)
+            const rotY = data.rotationDelta.x * 15;
+
+            // Apply ONLY Yaw rotation (0 for Pitch/X-axis)
+            earth.addRotation(0, rotY);
         }
     }
 
