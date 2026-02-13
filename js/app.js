@@ -218,31 +218,35 @@ function onFullyLoaded() {
 // ============================================
 // UI
 // ============================================
-dismissBtn.addEventListener('click', () => instructions.classList.add('hidden'));
-toggleInstructionsBtn.addEventListener('click', () => instructions.classList.toggle('hidden'));
+// ============================================
+// UI
+// ============================================
+function setupUI() {
+    dismissBtn.addEventListener('click', () => instructions.classList.add('hidden'));
+    toggleInstructionsBtn.addEventListener('click', () => instructions.classList.toggle('hidden'));
 
-// Settings UI
-const paramsBtn = document.getElementById('params-btn');
-const paramsPanel = document.getElementById('params-panel');
-const closeParamsBtn = document.getElementById('close-params');
+    // Settings UI
+    const paramsBtn = document.getElementById('params-btn');
+    const paramsPanel = document.getElementById('params-panel');
+    const closeParamsBtn = document.getElementById('close-params');
 
-paramsBtn.addEventListener('click', () => paramsPanel.classList.toggle('hidden'));
-closeParamsBtn.addEventListener('click', () => paramsPanel.classList.add('hidden'));
+    paramsBtn.addEventListener('click', () => paramsPanel.classList.toggle('hidden'));
+    closeParamsBtn.addEventListener('click', () => paramsPanel.classList.add('hidden'));
 
-// Checkboxes
-document.getElementById('toggle-follow').addEventListener('change', (e) => {
-    settings.followHand = e.target.checked;
-});
-document.getElementById('toggle-zoom').addEventListener('change', (e) => {
-    settings.enableZoom = e.target.checked;
-});
-document.getElementById('toggle-manual-rotate').addEventListener('change', (e) => {
-    settings.enableManualRotate = e.target.checked;
-});
-document.getElementById('toggle-auto-rotate').addEventListener('change', (e) => {
-    settings.enableAutoRotate = e.target.checked;
-    earth.setAutoRotation(e.target.checked);
-});
+    // Checkboxes
+    document.getElementById('toggle-follow').addEventListener('change', (e) => {
+        settings.followHand = e.target.checked;
+    });
+    document.getElementById('toggle-zoom').addEventListener('change', (e) => {
+        settings.enableZoom = e.target.checked;
+    });
+    document.getElementById('toggle-manual-rotate').addEventListener('change', (e) => {
+        settings.enableManualRotate = e.target.checked;
+    });
+    document.getElementById('toggle-auto-rotate').addEventListener('change', (e) => {
+        settings.enableAutoRotate = e.target.checked;
+        earth.setAutoRotation(e.target.checked);
+    });
 }
 
 // ============================================
