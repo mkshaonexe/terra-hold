@@ -161,14 +161,12 @@ class Earth {
         this.group.scale.setScalar(this.currentScale);
 
         if (this.model) {
-            // Auto-rotation only when no hands are controlling
-            if (!handsActive) {
-                this.model.rotation.y += CONFIG.AUTO_ROTATE_SPEED;
-            }
+            // Auto-rotation (ALWAYS ACTIVE)
+            this.model.rotation.y += CONFIG.AUTO_ROTATE_SPEED;
 
-            // Manual rotation velocity (from right hand gestures)
-            this.model.rotation.y += this.velocityRotY * CONFIG.MANUAL_ROTATE_FACTOR;
-            this.model.rotation.x += this.velocityRotX * CONFIG.MANUAL_ROTATE_FACTOR;
+            // Manual rotation velocity (DISABLED)
+            // this.model.rotation.y += this.velocityRotY * CONFIG.MANUAL_ROTATE_FACTOR;
+            // this.model.rotation.x += this.velocityRotX * CONFIG.MANUAL_ROTATE_FACTOR;
         }
 
         // Dampen rotation (smooth deceleration)

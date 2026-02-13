@@ -169,14 +169,14 @@ function handleRightHand(data) {
     // Use the new state-based logic: data.isZooming + data.scaleFactor
     earth.setScaleFactor(data.scaleFactor, data.isZooming);
 
-    // ---- ROTATION ----
-    const ROT_DEAD_ZONE = 0.003;
-    if (Math.abs(data.rotationDelta.x) > ROT_DEAD_ZONE ||
-        Math.abs(data.rotationDelta.y) > ROT_DEAD_ZONE) {
-        const rotX = data.rotationDelta.y * 15;
-        const rotY = -data.rotationDelta.x * 15;
-        earth.addRotation(rotX, rotY);
-    }
+    // ---- ROTATION (DISABLED) ----
+    // const ROT_DEAD_ZONE = 0.003;
+    // if (Math.abs(data.rotationDelta.x) > ROT_DEAD_ZONE ||
+    //     Math.abs(data.rotationDelta.y) > ROT_DEAD_ZONE) {
+    //     const rotX = data.rotationDelta.y * 15;
+    //     const rotY = -data.rotationDelta.x * 15;
+    //     earth.addRotation(rotX, rotY);
+    // }
 }
 
 function handleHandsLost() {
