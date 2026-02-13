@@ -139,6 +139,15 @@
                 <label>Debug Logs</label>
                 <input type="checkbox" id="toggle-debug">
             </div>
+            <div class="setting-row">
+                <label>Vertical Offset</label>
+                <input type="range" id="range-offset-y" min="0" max="300" value="120" style="width: 100px;">
+            </div>
+            <div class="setting-row">
+                <label>Size (<span id="radius-value">--</span> km)</label>
+                <input type="range" id="range-scale" min="0.15" max="5.0" step="0.05" value="0.15"
+                    style="width: 100px;">
+            </div>
             <button id="close-params" class="hud-btn-text">Close</button>
         </div>
     </div>

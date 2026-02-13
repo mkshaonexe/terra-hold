@@ -43,7 +43,11 @@ const settings = {
     enableAutoRotate: true,
     enableAutoRotate: true,
     showSkeleton: false,
-    enableDebugLogs: false
+    enableAutoRotate: true,
+    showSkeleton: false,
+    enableDebugLogs: false,
+    earthOffsetY: parseInt(localStorage.getItem('earthOffsetY')) || 120,
+    earthScale: parseFloat(localStorage.getItem('earthScale')) || 0.15 // Default scale
 };
 
 // ============================================
@@ -174,7 +178,7 @@ function handleLeftHand(data) {
     const y = -(data.palmCenter.y - 0.5) * sh;
 
     // Earth sits directly on the palm
-    earth.setPosition(x, y + 120, 0);
+    earth.setPosition(x, y + settings.earthOffsetY, 0);
 
     updateSkeleton(data.landmarks, 'left');
 }
@@ -189,6 +193,17 @@ function handleRightHand(data) {
         earth.setScaleFactor(data.scaleFactor, data.isZooming);
         if (data.isZooming) {
             isPinching = true;
+            // Update settings and slider while zooming
+            const newScale = earth.targetScale;
+            settings.earthScale = newScale;
+            // Debounce storage write? or just write on end?
+            // For now, let's update UI but maybe not storage every frame
+            const scaleSlider = document.getElementById('range-scale');
+            if (scaleSlider) scaleSlider.value = newScale;
+            updateRadiusDisplay(newScale);
+        } else {
+            // When zoom ends, save the final scale
+            localStorage.setItem('earthScale', settings.earthScale);
         }
     }
 
@@ -273,8 +288,48 @@ function setupUI() {
     document.getElementById('toggle-debug').addEventListener('change', (e) => {
         settings.enableDebugLogs = e.target.checked;
         handTracker.setDebugMode(settings.enableDebugLogs);
+        handTracker.setDebugMode(settings.enableDebugLogs);
         console.log(`🔧 Debug Logs: ${settings.enableDebugLogs ? 'ON' : 'OFF'}`);
     });
+
+    // Vertical Offset Slider
+    const offsetSlider = document.getElementById('range-offset-y');
+    if (offsetSlider) {
+        // Set initial value from storage
+        offsetSlider.value = settings.earthOffsetY;
+
+        offsetSlider.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value, 10);
+            settings.earthOffsetY = val;
+            localStorage.setItem('earthOffsetY', val);
+        });
+    }
+
+    // Scale Slider
+    const scaleSlider = document.getElementById('range-scale');
+    if (scaleSlider) {
+        scaleSlider.value = settings.earthScale;
+        // Apply initial scale
+        earth.setScale(settings.earthScale);
+        updateRadiusDisplay(settings.earthScale);
+
+        scaleSlider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            settings.earthScale = val;
+            localStorage.setItem('earthScale', val);
+            earth.setScale(val);
+            updateRadiusDisplay(val);
+        });
+    }
+}
+
+function updateRadiusDisplay(scale) {
+    const radiusEl = document.getElementById('radius-value');
+    if (radiusEl) {
+        // Earth radius ~ 6371 km
+        const radius = Math.round(scale * 6371);
+        radiusEl.textContent = radius.toLocaleString();
+    }
 }
 
 // ============================================

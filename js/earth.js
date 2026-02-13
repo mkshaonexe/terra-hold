@@ -145,6 +145,10 @@ class Earth {
         }
     }
 
+    setScale(scale) {
+        this.targetScale = Math.max(0.15, Math.min(5.0, scale));
+    }
+
     addRotation(dx, dy) {
         this.velocityRotX += dx;
         this.velocityRotY += dy;
