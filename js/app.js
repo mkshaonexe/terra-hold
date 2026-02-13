@@ -335,19 +335,28 @@ function setupUI() {
     closeParamsBtn.addEventListener('click', () => paramsPanel.classList.add('hidden'));
 
     // Checkboxes
+    document.getElementById('toggle-follow').checked = settings.followHand;
     document.getElementById('toggle-follow').addEventListener('change', (e) => {
         settings.followHand = e.target.checked;
     });
+
+    document.getElementById('toggle-zoom').checked = settings.enableZoom;
     document.getElementById('toggle-zoom').addEventListener('change', (e) => {
         settings.enableZoom = e.target.checked;
     });
+
+    document.getElementById('toggle-manual-rotate').checked = settings.enableManualRotate;
     document.getElementById('toggle-manual-rotate').addEventListener('change', (e) => {
         settings.enableManualRotate = e.target.checked;
     });
+
+    document.getElementById('toggle-auto-rotate').checked = settings.enableAutoRotate;
     document.getElementById('toggle-auto-rotate').addEventListener('change', (e) => {
         settings.enableAutoRotate = e.target.checked;
         earth.setAutoRotation(e.target.checked);
     });
+
+    document.getElementById('toggle-skeleton').checked = settings.showSkeleton;
     document.getElementById('toggle-skeleton').addEventListener('change', (e) => {
         settings.showSkeleton = e.target.checked;
         if (!settings.showSkeleton) {
@@ -355,9 +364,9 @@ function setupUI() {
         }
     });
 
+    document.getElementById('toggle-debug').checked = settings.enableDebugLogs;
     document.getElementById('toggle-debug').addEventListener('change', (e) => {
         settings.enableDebugLogs = e.target.checked;
-        handTracker.setDebugMode(settings.enableDebugLogs);
         handTracker.setDebugMode(settings.enableDebugLogs);
         console.log(`🔧 Debug Logs: ${settings.enableDebugLogs ? 'ON' : 'OFF'}`);
     });
