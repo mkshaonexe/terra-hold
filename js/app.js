@@ -179,14 +179,20 @@ function handleLeftHand(data) {
 
 // RIGHT HAND → Scale + Rotation ONLY (never called with single hand)
 function handleRightHand(data) {
+    let isPinching = false;
+
     // ---- PINCH-TO-ZOOM (Proportional) ----
     if (settings.enableZoom) {
         // Use the new state-based logic: data.isZooming + data.scaleFactor
         earth.setScaleFactor(data.scaleFactor, data.isZooming);
+        if (data.isZooming) {
+            isPinching = true;
+        }
     }
 
     // ---- ROTATION ----
-    if (settings.enableManualRotate) {
+    // Only rotate if NOT pinching (exclusive mode)
+    if (settings.enableManualRotate && !isPinching) {
         const ROT_DEAD_ZONE = 0.003;
         if (Math.abs(data.rotationDelta.x) > ROT_DEAD_ZONE ||
             Math.abs(data.rotationDelta.y) > ROT_DEAD_ZONE) {
