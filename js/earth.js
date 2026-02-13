@@ -24,8 +24,8 @@ class Earth {
         this.currentPosition = new THREE.Vector3(0, 0, 0);
 
         // Scale
-        this.targetScale = 1.0;
-        this.currentScale = 1.0;
+        this.targetScale = 0.15;
+        this.currentScale = 0.15;
 
         // Rotation
         this.velocityRotX = 0;
