@@ -150,7 +150,17 @@ body {
     font-size: 42px;
     font-weight: 800;
     letter-spacing: -1px;
-    margin-bottom: 8px;
+    margin-bottom: 2px;
+}
+
+.loader-author {
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    opacity: 0.8;
 }
 
 .title-terra {
@@ -390,6 +400,20 @@ body {
     font-size: 22px;
     font-weight: 700;
     letter-spacing: -0.5px;
+    display: flex;
+    flex-direction: column;
+    line-height: 1;
+}
+
+.hud-author {
+    font-family: var(--font-main);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-top: 2px;
+    opacity: 0.8;
 }
 
 .hud-top-right {
