@@ -5,7 +5,7 @@
 const CONFIG = {
     POSITION_LERP: 0.28,  // Fast snapping to palm
     SCALE_LERP: 0.18,     // Responsive zoom
-    ROT_DAMPING: 0.98,    // Low friction (spins for a long time)
+    ROT_DAMPING: 0.996,   // Extremely low friction (spins for much longer)
     AUTO_ROTATE_SPEED: 0.003,
     MANUAL_ROTATE_FACTOR: 0.08,
 };
