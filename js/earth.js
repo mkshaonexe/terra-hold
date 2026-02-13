@@ -33,6 +33,7 @@ class Earth {
 
         // Atmosphere
         this.atmosphere = null;
+        this.autoRotateEnabled = true;
     }
 
 
@@ -160,31 +161,35 @@ class Earth {
         this.currentScale += (this.targetScale - this.currentScale) * CONFIG.SCALE_LERP;
         this.group.scale.setScalar(this.currentScale);
 
-        if (this.model) {
-            // Auto-rotation (ALWAYS ACTIVE)
+        // Auto-rotation
+        if (this.autoRotateEnabled) {
             this.model.rotation.y += CONFIG.AUTO_ROTATE_SPEED;
-
-            // Manual rotation velocity (DISABLED)
-            // this.model.rotation.y += this.velocityRotY * CONFIG.MANUAL_ROTATE_FACTOR;
-            // this.model.rotation.x += this.velocityRotX * CONFIG.MANUAL_ROTATE_FACTOR;
         }
+
+        // Manual rotation velocity
+        this.model.rotation.y += this.velocityRotY * CONFIG.MANUAL_ROTATE_FACTOR;
+        this.model.rotation.x += this.velocityRotX * CONFIG.MANUAL_ROTATE_FACTOR;
+    }
 
         // Dampen rotation (smooth deceleration)
         this.velocityRotX *= CONFIG.ROT_DAMPING;
-        this.velocityRotY *= CONFIG.ROT_DAMPING;
-        if (Math.abs(this.velocityRotX) < 0.0001) this.velocityRotX = 0;
-        if (Math.abs(this.velocityRotY) < 0.0001) this.velocityRotY = 0;
+this.velocityRotY *= CONFIG.ROT_DAMPING;
+if (Math.abs(this.velocityRotX) < 0.0001) this.velocityRotX = 0;
+if (Math.abs(this.velocityRotY) < 0.0001) this.velocityRotY = 0;
     }
 
-    isLoaded() {
-        return this.loaded;
-    }
+isLoaded() {
+    return this.loaded;
+}
 
-    setVisible(visible) {
-        if (this.group) {
-            this.group.visible = visible;
-        }
+setVisible(visible) {
+    if (this.group) {
+        this.group.visible = visible;
     }
+}
+setAutoRotation(enabled) {
+    this.autoRotateEnabled = enabled;
+}
 }
 
 export default Earth;

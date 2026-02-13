@@ -36,6 +36,13 @@ let frameCount = 0;
 let fps = 0;
 let handsAreActive = false; // Track if any hand is currently controlling
 
+const settings = {
+    followHand: true,
+    enableZoom: true,
+    enableManualRotate: false,
+    enableAutoRotate: true
+};
+
 // ============================================
 // Progress & Status
 // ============================================
@@ -152,6 +159,8 @@ function handleLeftHand(data) {
         earth.setVisible(true); // Show Earth when left hand is detected
     }
 
+    if (!settings.followHand) return;
+
     const sw = window.innerWidth;
     const sh = window.innerHeight;
 
@@ -166,17 +175,21 @@ function handleLeftHand(data) {
 // RIGHT HAND → Scale + Rotation ONLY (never called with single hand)
 function handleRightHand(data) {
     // ---- PINCH-TO-ZOOM (Proportional) ----
-    // Use the new state-based logic: data.isZooming + data.scaleFactor
-    earth.setScaleFactor(data.scaleFactor, data.isZooming);
+    if (settings.enableZoom) {
+        // Use the new state-based logic: data.isZooming + data.scaleFactor
+        earth.setScaleFactor(data.scaleFactor, data.isZooming);
+    }
 
-    // ---- ROTATION (DISABLED) ----
-    // const ROT_DEAD_ZONE = 0.003;
-    // if (Math.abs(data.rotationDelta.x) > ROT_DEAD_ZONE ||
-    //     Math.abs(data.rotationDelta.y) > ROT_DEAD_ZONE) {
-    //     const rotX = data.rotationDelta.y * 15;
-    //     const rotY = -data.rotationDelta.x * 15;
-    //     earth.addRotation(rotX, rotY);
-    // }
+    // ---- ROTATION ----
+    if (settings.enableManualRotate) {
+        const ROT_DEAD_ZONE = 0.003;
+        if (Math.abs(data.rotationDelta.x) > ROT_DEAD_ZONE ||
+            Math.abs(data.rotationDelta.y) > ROT_DEAD_ZONE) {
+            const rotX = data.rotationDelta.y * 15;
+            const rotY = -data.rotationDelta.x * 15;
+            earth.addRotation(rotX, rotY);
+        }
+    }
 }
 
 function handleHandsLost() {
@@ -205,9 +218,31 @@ function onFullyLoaded() {
 // ============================================
 // UI
 // ============================================
-function setupUI() {
-    dismissBtn.addEventListener('click', () => instructions.classList.add('hidden'));
-    toggleInstructionsBtn.addEventListener('click', () => instructions.classList.toggle('hidden'));
+dismissBtn.addEventListener('click', () => instructions.classList.add('hidden'));
+toggleInstructionsBtn.addEventListener('click', () => instructions.classList.toggle('hidden'));
+
+// Settings UI
+const paramsBtn = document.getElementById('params-btn');
+const paramsPanel = document.getElementById('params-panel');
+const closeParamsBtn = document.getElementById('close-params');
+
+paramsBtn.addEventListener('click', () => paramsPanel.classList.toggle('hidden'));
+closeParamsBtn.addEventListener('click', () => paramsPanel.classList.add('hidden'));
+
+// Checkboxes
+document.getElementById('toggle-follow').addEventListener('change', (e) => {
+    settings.followHand = e.target.checked;
+});
+document.getElementById('toggle-zoom').addEventListener('change', (e) => {
+    settings.enableZoom = e.target.checked;
+});
+document.getElementById('toggle-manual-rotate').addEventListener('change', (e) => {
+    settings.enableManualRotate = e.target.checked;
+});
+document.getElementById('toggle-auto-rotate').addEventListener('change', (e) => {
+    settings.enableAutoRotate = e.target.checked;
+    earth.setAutoRotation(e.target.checked);
+});
 }
 
 // ============================================
