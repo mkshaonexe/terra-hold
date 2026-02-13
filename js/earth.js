@@ -169,27 +169,27 @@ class Earth {
         // Manual rotation velocity
         this.model.rotation.y += this.velocityRotY * CONFIG.MANUAL_ROTATE_FACTOR;
         this.model.rotation.x += this.velocityRotX * CONFIG.MANUAL_ROTATE_FACTOR;
-    }
+
         // Dampen rotation (smooth deceleration)
         this.velocityRotX *= CONFIG.ROT_DAMPING;
-this.velocityRotY *= CONFIG.ROT_DAMPING;
-if (Math.abs(this.velocityRotX) < 0.0001) this.velocityRotX = 0;
-if (Math.abs(this.velocityRotY) < 0.0001) this.velocityRotY = 0;
+        this.velocityRotY *= CONFIG.ROT_DAMPING;
+        if (Math.abs(this.velocityRotX) < 0.0001) this.velocityRotX = 0;
+        if (Math.abs(this.velocityRotY) < 0.0001) this.velocityRotY = 0;
     }
 
-isLoaded() {
-    return this.loaded;
-}
-
-setVisible(visible) {
-    if (this.group) {
-        this.group.visible = visible;
+    isLoaded() {
+        return this.loaded;
     }
-}
 
-setAutoRotation(enabled) {
-    this.autoRotateEnabled = enabled;
-}
+    setVisible(visible) {
+        if (this.group) {
+            this.group.visible = visible;
+        }
+    }
+
+    setAutoRotation(enabled) {
+        this.autoRotateEnabled = enabled;
+    }
 }
 
 export default Earth;
