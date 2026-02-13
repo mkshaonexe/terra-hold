@@ -186,6 +186,7 @@ setVisible(visible) {
         this.group.visible = visible;
     }
 }
+
 setAutoRotation(enabled) {
     this.autoRotateEnabled = enabled;
 }
