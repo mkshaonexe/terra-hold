@@ -170,7 +170,6 @@ class Earth {
         this.model.rotation.y += this.velocityRotY * CONFIG.MANUAL_ROTATE_FACTOR;
         this.model.rotation.x += this.velocityRotX * CONFIG.MANUAL_ROTATE_FACTOR;
     }
-
         // Dampen rotation (smooth deceleration)
         this.velocityRotX *= CONFIG.ROT_DAMPING;
 this.velocityRotY *= CONFIG.ROT_DAMPING;
