@@ -82,7 +82,7 @@ class Earth {
                     this._createAtmosphere(desiredSize / 2);
 
                     scene.add(this.group);
-                    this.group.visible = true;
+                    this.group.visible = false; // Initially hidden until hand is detected
                     this.loaded = true;
 
                     console.log('✅ Earth GLTF model loaded with textures');
@@ -180,6 +180,12 @@ class Earth {
 
     isLoaded() {
         return this.loaded;
+    }
+
+    setVisible(visible) {
+        if (this.group) {
+            this.group.visible = visible;
+        }
     }
 }
 

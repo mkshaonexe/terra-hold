@@ -147,7 +147,10 @@ async function requestCamera() {
 
 // LEFT HAND → Position ONLY
 function handleLeftHand(data) {
-    handsAreActive = true;
+    if (!handsAreActive) {
+        handsAreActive = true;
+        earth.setVisible(true); // Show Earth when left hand is detected
+    }
 
     const sw = window.innerWidth;
     const sh = window.innerHeight;
@@ -177,7 +180,10 @@ function handleRightHand(data) {
 }
 
 function handleHandsLost() {
-    handsAreActive = false;
+    if (handsAreActive) {
+        handsAreActive = false;
+        earth.setVisible(false); // Hide Earth when hands are lost
+    }
 }
 
 // ============================================
