@@ -187,19 +187,32 @@ function handleLeftHand(data) {
     // 1. Single Hand (Rights Hand NOT active) + Fist -> Hide Earth
     // 2. Two Hands (Right Hand active) + Fist -> Stop Rotation
 
-    // Requirements:
-    // 1. Left Hand MUST be present AND have 4 fingers open (isOpenHand) -> VISIBLE
-    // 2. If Fist or partially open -> HIDDEN AND STOP ROTATION
+    // Requirements (Refined v2):
+    // 1. Left Hand Open (>=4 fingers) -> VISIBLE (Normal)
+    // 2. Left Hand Closed (<4 fingers):
+    //    a. If Right Hand Detected -> VISIBLE + BRAKE (Stop Rotation)
+    //    b. If Right Hand NOT Detected -> HIDDEN + PERSIST (Keep Rotation Momentum)
 
     // Store global states
     isLeftFist = data.isFist;
     isLeftHandOpen = data.isOpenHand; // 4 fingers open
+    const isRightHandPresent = data.isRightHandDetected;
 
     if (isLeftHandOpen) {
+        // CASE 1: Normal Visibility
         earth.setVisible(true);
+        // Rotation continues normally via inertia in earth.update()
     } else {
-        earth.setVisible(false);
-        earth.stopRotation(); // Stop immediately if hidden
+        // CASE 2: Left Hand Closed
+        if (isRightHandPresent) {
+            // CASE 2a: Brake Mode (Right hand is there, user likely wants to stop/inspect)
+            earth.setVisible(true); // Keep visible
+            earth.stopRotation();   // KILL rotation immediately
+        } else {
+            // CASE 2b: Hide Mode (Right hand gone, user withdrawing)
+            earth.setVisible(false); // Hide
+            // DO NOT stop rotation. Let it persist so it spins when reappearing.
+        }
     }
 
 
@@ -266,7 +279,13 @@ function handleHandsLost() {
     isLeftFist = false;
     isLeftHandOpen = false;
     earth.setVisible(false);
-    earth.stopRotation(); // Stop immediately
+    // If all hands are lost, we probably want to reset/stop or just let it hide?
+    // User said: "logic is invalid... checking if screen has right hand..."
+    // But this function `handleHandsLost` means NO hands are detected at all.
+    // If no hands, we likely want to just hide and maybe stop or persist?
+    // "Persist" seems to be the preference for "hiding", so let's removing stopRotation here
+    // to match "Hidden + Persist" behavior when hands leave the frame completely.
+    // earth.stopRotation(); // REMOVED to allow persistence on total exit
 
     clearSkeleton();
 }
