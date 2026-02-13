@@ -40,7 +40,8 @@ const settings = {
     followHand: true,
     enableZoom: true,
     enableManualRotate: false,
-    enableAutoRotate: true
+    enableAutoRotate: true,
+    showSkeleton: false
 };
 
 // ============================================
@@ -78,6 +79,8 @@ function initThreeJS() {
     const fillLight = new THREE.DirectionalLight(0x4fc3f7, 0.4);
     fillLight.position.set(-5, -2, 3);
     scene.add(fillLight);
+
+    initSkeleton();
 
     window.addEventListener('resize', onResize);
 }
@@ -170,6 +173,8 @@ function handleLeftHand(data) {
 
     // Earth sits directly on the palm
     earth.setPosition(x, y + 40, 0);
+
+    updateSkeleton(data.landmarks, 'left');
 }
 
 // RIGHT HAND → Scale + Rotation ONLY (never called with single hand)
@@ -190,6 +195,8 @@ function handleRightHand(data) {
             earth.addRotation(rotX, rotY);
         }
     }
+
+    updateSkeleton(data.landmarks, 'right');
 }
 
 function handleHandsLost() {
@@ -197,6 +204,7 @@ function handleHandsLost() {
         handsAreActive = false;
         earth.setVisible(false); // Hide Earth when hands are lost
     }
+    clearSkeleton();
 }
 
 // ============================================
@@ -247,6 +255,71 @@ function setupUI() {
         settings.enableAutoRotate = e.target.checked;
         earth.setAutoRotation(e.target.checked);
     });
+    document.getElementById('toggle-skeleton').addEventListener('change', (e) => {
+        settings.showSkeleton = e.target.checked;
+        if (!settings.showSkeleton) {
+            clearSkeleton();
+        }
+    });
+}
+
+// ============================================
+// Skeleton Visualization
+// ============================================
+let skeletonGroup = new THREE.Group();
+const skeletons = { left: null, right: null };
+
+function initSkeleton() {
+    scene.add(skeletonGroup);
+}
+
+function updateSkeleton(landmarks, handType) {
+    if (!settings.showSkeleton || !landmarks) return;
+
+    // Create line geometry if not exists
+    if (!skeletons[handType]) {
+        const material = new THREE.LineBasicMaterial({
+            color: handType === 'left' ? 0x00ff00 : 0xff0000,
+            linewidth: 2
+        });
+        const geometry = new THREE.BufferGeometry();
+        skeletons[handType] = new THREE.LineSegments(geometry, material);
+        skeletonGroup.add(skeletons[handType]);
+    }
+
+    const points = [];
+    const connections = [
+        [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
+        [0, 5], [5, 6], [6, 7], [7, 8], // Index
+        [0, 9], [9, 10], [10, 11], [11, 12], // Middle
+        [0, 13], [13, 14], [14, 15], [15, 16], // Ring
+        [0, 17], [17, 18], [18, 19], [19, 20], // Pinky
+        [5, 9], [9, 13], [13, 17] // Palm
+    ];
+
+    const sw = window.innerWidth;
+    const sh = window.innerHeight;
+
+    connections.forEach(([i, j]) => {
+        const p1 = landmarks[i];
+        const p2 = landmarks[j];
+
+        // Map normalized coordinates to screen space (same as handleLeftHand)
+        // x: (0.5 - p.x) * sw
+        // y: -(p.y - 0.5) * sh
+        points.push(
+            (0.5 - p1.x) * sw, -(p1.y - 0.5) * sh, 0,
+            (0.5 - p2.x) * sw, -(p2.y - 0.5) * sh, 0
+        );
+    });
+
+    skeletons[handType].geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+    skeletons[handType].visible = true;
+}
+
+function clearSkeleton() {
+    if (skeletons.left) skeletons.left.visible = false;
+    if (skeletons.right) skeletons.right.visible = false;
 }
 
 // ============================================

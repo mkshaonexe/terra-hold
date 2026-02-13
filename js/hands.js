@@ -243,6 +243,7 @@ class HandTracker {
         if (this.onLeftHand) {
             this.onLeftHand({
                 palmCenter: this.leftPalm,
+                landmarks: landmarks, // Raw landmarks for skeleton
             });
         }
     }
@@ -305,6 +306,7 @@ class HandTracker {
                 isZooming: this.isZooming,
                 scaleFactor: scaleFactor, // 1.0 = no change, 0.5 = half size, etc.
                 rotationDelta: rotDelta,
+                landmarks: landmarks, // Raw landmarks for skeleton
             });
         }
     }
