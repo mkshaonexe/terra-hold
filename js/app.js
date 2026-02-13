@@ -180,11 +180,49 @@ function handleLeftHand(data) {
     // Earth sits directly on the palm
     earth.setPosition(x, y + settings.earthOffsetY, 0);
 
+    // ---- GESTURE LOGIC ----
+    // 1. Single Hand (Rights Hand NOT active) + Fist -> Hide Earth
+    // 2. Two Hands (Right Hand active) + Fist -> Stop Rotation
+
+    if (!handsAreActive) {
+        // Technically `handsAreActive` is true if we are here, but let's check if right hand is controlling
+        // We need a way to know if right hand is present. `handsAreActive` is a global "any hand" flag.
+        // Let's add a robust check.
+    }
+
+    if (data.isFist) {
+        // Check if right hand is presently tracking (we can use a timestamp or flag)
+        // For now, let's rely on `handTracker.rightHandDetected` (we need to access it or track it here)
+        // Simpler: `handsAreActive` is barely useful. Let's track `isRightHandTracking`.
+
+        if (isRightHandTracking) {
+            // Two hands -> Stop Rotation
+            earth.setAutoRotation(false);
+        } else {
+            // Single hand -> Hide Earth
+            earth.setVisible(false);
+        }
+    } else {
+        // Hand Open
+        if (isRightHandTracking) {
+            // Two hands -> Resume Rotation (if enabled in settings)
+            earth.setAutoRotation(settings.enableAutoRotate);
+        } else {
+            // Single hand -> Show Earth
+            earth.setVisible(true);
+        }
+    }
+
     updateSkeleton(data.landmarks, 'left');
 }
 
+let isRightHandTracking = false;
+
 // RIGHT HAND → Scale + Rotation ONLY (never called with single hand)
 function handleRightHand(data) {
+    isRightHandTracking = true;
+    earth.setVisible(true); // Always show Earth when right hand is active (overrides left fist hide)
+
     let isPinching = false;
 
     // ---- PINCH-TO-ZOOM (Proportional) ----
@@ -227,6 +265,7 @@ function handleHandsLost() {
         handsAreActive = false;
         earth.setVisible(false); // Hide Earth when hands are lost
     }
+    isRightHandTracking = false;
     clearSkeleton();
 }
 

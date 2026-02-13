@@ -234,11 +234,20 @@ class HandTracker {
         const rawPalm = this._calculatePalmCenter(landmarks);
         this.leftPalm = this._smoothPosition(this.leftPalmBuffer, rawPalm);
 
-        // Left hand ONLY sends position data — nothing else
+        // Check for Fist (Rock)
+        // Thumb is ignored for "rock" usually, or can be included. 
+        // Let's check Index, Middle, Ring, Pinky
+        const isFist = this._isFingerClosed(landmarks, 8, 6) &&   // Index
+            this._isFingerClosed(landmarks, 12, 10) &&  // Middle
+            this._isFingerClosed(landmarks, 16, 14) &&  // Ring
+            this._isFingerClosed(landmarks, 20, 18);    // Pinky
+
+        // Left hand sends position data AND fist state
         if (this.onLeftHand) {
             this.onLeftHand({
                 palmCenter: this.leftPalm,
                 landmarks: landmarks, // Raw landmarks for skeleton
+                isFist: isFist
             });
         }
     }
