@@ -39,12 +39,12 @@ let handsAreActive = false; // Track if any hand is currently controlling
 const settings = {
     followHand: true,
     enableZoom: true,
-    enableManualRotate: false,
+    enableManualRotate: true,
     enableAutoRotate: true,
     showSkeleton: false,
     enableDebugLogs: false,
     earthOffsetY: parseInt(localStorage.getItem('earthOffsetY')) || 120,
-    earthScale: parseFloat(localStorage.getItem('earthScale')) || 1.0 // Default scale (6371 km)
+    earthScale: parseFloat(localStorage.getItem('earthScale')) || 0.392 // Default scale (Minimum)
 };
 
 // ============================================
