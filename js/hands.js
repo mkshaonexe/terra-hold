@@ -124,17 +124,31 @@ class HandTracker {
         const numHands = results.multiHandLandmarks.length;
 
         if (numHands === 1) {
-            // ★ SINGLE HAND → ALWAYS position only
-            this.handsCount = 1;
-            this.leftHandDetected = true;
-            this.rightHandDetected = false;
-            this._rightHandActive = false;
-            this.prevRightPalm = null;
-            // Clear right hand buffers so they don't carry over
-            this.rightPalmBuffer = [];
-            this.pinchBuffer = [];
+            // ★ SINGLE HAND → Check Label Strictness
+            const label = results.multiHandedness[0].label;
+            // MediaPipe Mirrors: "Right" label = User's LEFT hand
+            const isUserLeft = label === 'Right';
 
-            this._processLeftHand(results.multiHandLandmarks[0]);
+            this.handsCount = 1;
+            this.leftHandDetected = isUserLeft;
+            this.rightHandDetected = !isUserLeft;
+
+            if (isUserLeft) {
+                // It IS the Left Hand
+                this._rightHandActive = false;
+                this.prevRightPalm = null;
+                // Clear right hand buffers
+                this.rightPalmBuffer = [];
+                this.pinchBuffer = [];
+
+                this._processLeftHand(results.multiHandLandmarks[0]);
+            } else {
+                // It IS the Right Hand (User's Right)
+                // We process it so rotation/scale works IF earth is visible (which it won't be, usually)
+                // But specifically for "Right hand alone", earth shouldn't show.
+                // Since this.leftHandDetected is false, Earth remains hidden in app.js.
+                this._processRightHand(results.multiHandLandmarks[0]);
+            }
 
         } else if (numHands === 2) {
             // ★ TWO HANDS → Check if they're truly separate
@@ -346,6 +360,7 @@ class HandTracker {
                 scaleFactor: pinchFactor,  // Now typically 0.0 to 1.0
                 rotationDelta: rotDelta,
                 landmarks: landmarks,
+                isLeftHandDetected: this.leftHandDetected // Pass left hand state
             });
         }
     }

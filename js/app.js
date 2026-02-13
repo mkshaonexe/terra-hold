@@ -224,7 +224,18 @@ let isLeftHandOpen = false;   // Track left hand open state
 
 // RIGHT HAND → Scale + Rotation ONLY (never called with single hand)
 function handleRightHand(data) {
-    // strict check: if earth is hidden, right hand does nothing
+    // Safety: If Left Hand is missing, Earth MUST be hidden.
+    // (Addresses issue where switching to Right-Only left Earth visible)
+    if (!data.isLeftHandDetected) {
+        if (earth.isVisible()) {
+            earth.setVisible(false);
+            // We allow rotation to persist (don't stop) so it spins if left hand returns
+        }
+        return;
+    }
+
+    // strict check: if earth is hidden (e.g. Left Hand is present but Fist)
+    // right hand does nothing (except maybe Brake, but that's handled in handleLeftHand)
     if (!earth.isVisible()) return;
 
 
