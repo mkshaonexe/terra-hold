@@ -85,14 +85,7 @@ class HandTracker {
 
         this.handsInstance.onResults((results) => this._processResults(results));
 
-        // Trigger lazy model loading
-        try {
-            if (videoElement.readyState >= 2) {
-                await this.handsInstance.send({ image: videoElement });
-            }
-        } catch (e) {
-            console.log('⏳ Initial frame skipped');
-        }
+        this.handsInstance.onResults((results) => this._processResults(results));
 
         this.isReady = true;
         console.log('✅ Hand tracking initialized');
@@ -235,6 +228,8 @@ class HandTracker {
 
     // ---- Hand Processing ----
 
+    // ---- Hand Processing ----
+
     _processLeftHand(landmarks) {
         const rawPalm = this._calculatePalmCenter(landmarks);
         this.leftPalm = this._smoothPosition(this.leftPalmBuffer, rawPalm);
@@ -252,6 +247,16 @@ class HandTracker {
         const rawPalm = this._calculatePalmCenter(landmarks);
         this.rightPalm = this._smoothPosition(this.rightPalmBuffer, rawPalm);
 
+        // Analyze Finger States (Strict Zoom Guard)
+        // Middle (12), Ring (16), Pinky (20) must be CLOSED
+        // PIP joints: Middle(10), Ring(14), Pinky(18)
+        const middleClosed = this._isFingerClosed(landmarks, 12, 10);
+        const ringClosed = this._isFingerClosed(landmarks, 16, 14);
+        const pinkyClosed = this._isFingerClosed(landmarks, 20, 18);
+
+        // Strict Rule: ALL three must be closed to allow resizing
+        const isStrictGestureValid = middleClosed && ringClosed && pinkyClosed;
+
         // Pinch distance: thumb tip (4) ↔ index tip (8)
         const thumbTip = landmarks[4];
         const indexTip = landmarks[8];
@@ -260,30 +265,52 @@ class HandTracker {
         const rawDistance = Math.sqrt(dx * dx + dy * dy);
         this.pinchDistance = this._smoothValue(this.pinchBuffer, rawDistance);
 
+
+        // ---- DEBUG LOGGING ----
+        if (this.debugEnabled) {
+            // Throttle logs slightly or just log on strict state change?
+            // Real-time requested: "active hapen in the rela time"
+            console.log(`%c[HandDebug] Right Hand Stats:
+            Middle Closed: ${middleClosed}
+            Ring Closed:   ${ringClosed}
+            Pinky Closed:  ${pinkyClosed}
+            Strict Valid:  ${isStrictGestureValid ? '✅ YES' : '❌ NO'}
+            Pinch Dist:    ${this.pinchDistance.toFixed(3)}
+            Zooming:       ${this.isZooming}`,
+                isStrictGestureValid ? 'color: green; font-weight: bold;' : 'color: red;'
+            );
+
+            if (!isStrictGestureValid && this.isZooming) {
+                console.warn('⚠️ Gesture Invalidated! Forced STOP resizing.');
+            }
+        }
+
+
         // ---- STATE MACHINE: PINCH LOGIC ----
         // 1. Detect rapid opening (CLUTCH)
-        // If distance increases too fast, user is "resetting" hand -> disengage
         const pinchVelocity = this.pinchDistance - this.prevPinchDistance;
         const isOpeningFast = pinchVelocity > CONFIG.CLUTCH_VELOCITY_THRESHOLD;
 
         // 2. State Transitions
         if (!this.isZooming) {
-            // ENGAGE: Fingers close enough
-            if (this.pinchDistance < CONFIG.PINCH_THRESHOLD) {
+            // ENGAGE: Fingers close enough AND strict gesture is validation
+            if (this.pinchDistance < CONFIG.PINCH_THRESHOLD && isStrictGestureValid) {
                 this.isZooming = true;
                 this.startPinchDistance = this.pinchDistance;
+                if (this.debugEnabled) console.log('✅ ZOOM STARTED');
             }
         } else {
-            // DISENGAGE: Fingers open wide OR opening too fast (clutch)
-            if (this.pinchDistance > CONFIG.PINCH_RELEASE_THRESHOLD || isOpeningFast) {
+            // DISENGAGE: Fingers open wide OR opening too fast OR gesture becomes invalid
+            if (this.pinchDistance > CONFIG.PINCH_RELEASE_THRESHOLD || isOpeningFast || !isStrictGestureValid) {
                 this.isZooming = false;
+                if (this.debugEnabled && !isStrictGestureValid) console.log('🛑 ZOOM STOPPED (Invalid Gesture)');
+                else if (this.debugEnabled) console.log('⏹️ ZOOM STOPPED (Released)');
             }
         }
 
         // 3. Calculate Factors
         let scaleFactor = 1.0;
         if (this.isZooming && this.startPinchDistance > 0.001) {
-            // Proportional zoom: New / Old
             scaleFactor = this.pinchDistance / this.startPinchDistance;
         }
 
@@ -311,6 +338,18 @@ class HandTracker {
         }
     }
 
+    _isFingerClosed(landmarks, tipIdx, pipIdx) {
+        const wrist = landmarks[0];
+        const tip = landmarks[tipIdx];
+        const pip = landmarks[pipIdx];
+
+        // 2D Distance squared check
+        const dTip = (tip.x - wrist.x) ** 2 + (tip.y - wrist.y) ** 2;
+        const dPip = (pip.x - wrist.x) ** 2 + (pip.y - wrist.y) ** 2;
+
+        return dTip < dPip;
+    }
+
     _updateStatusUI(left, right) {
         const leftEl = document.getElementById('left-hand-status');
         const rightEl = document.getElementById('right-hand-status');
@@ -323,6 +362,10 @@ class HandTracker {
             rightEl.classList.toggle('on', right);
             rightEl.classList.toggle('off', !right);
         }
+    }
+
+    setDebugMode(enabled) {
+        this.debugEnabled = enabled;
     }
 
     setCallbacks({ onLeftHand, onRightHand, onHandsLost }) {

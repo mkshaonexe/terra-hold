@@ -98,6 +98,7 @@
         </div>
         <div class="hud-top-right">
             <span id="fps-counter" class="hud-badge">-- FPS</span>
+            <button id="params-btn" class="hud-badge hud-btn">⚙️</button>
             <button id="toggle-instructions" class="hud-badge hud-btn">?</button>
         </div>
         <div class="hud-bottom">
@@ -109,6 +110,36 @@
                     <span class="dot"></span> Right Hand
                 </span>
             </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div id="params-panel" class="params-panel hidden">
+            <h3>Settings</h3>
+            <div class="setting-row">
+                <label>Follow Hand</label>
+                <input type="checkbox" id="toggle-follow" checked>
+            </div>
+            <div class="setting-row">
+                <label>Enable Zoom</label>
+                <input type="checkbox" id="toggle-zoom" checked>
+            </div>
+            <div class="setting-row">
+                <label>Manual Rotate</label>
+                <input type="checkbox" id="toggle-manual-rotate">
+            </div>
+            <div class="setting-row">
+                <label>Auto Rotate</label>
+                <input type="checkbox" id="toggle-auto-rotate" checked>
+            </div>
+            <div class="setting-row">
+                <label>Show Skeleton</label>
+                <input type="checkbox" id="toggle-skeleton">
+            </div>
+            <div class="setting-row">
+                <label>Debug Logs</label>
+                <input type="checkbox" id="toggle-debug">
+            </div>
+            <button id="close-params" class="hud-btn-text">Close</button>
         </div>
     </div>
 

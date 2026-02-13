@@ -41,7 +41,9 @@ const settings = {
     enableZoom: true,
     enableManualRotate: false,
     enableAutoRotate: true,
-    showSkeleton: false
+    enableAutoRotate: true,
+    showSkeleton: false,
+    enableDebugLogs: false
 };
 
 // ============================================
@@ -266,6 +268,12 @@ function setupUI() {
         if (!settings.showSkeleton) {
             clearSkeleton();
         }
+    });
+
+    document.getElementById('toggle-debug').addEventListener('change', (e) => {
+        settings.enableDebugLogs = e.target.checked;
+        handTracker.setDebugMode(settings.enableDebugLogs);
+        console.log(`🔧 Debug Logs: ${settings.enableDebugLogs ? 'ON' : 'OFF'}`);
     });
 }
 
