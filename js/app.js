@@ -201,16 +201,18 @@ function handleLeftHand(data) {
     if (isLeftHandOpen) {
         // CASE 1: Normal Visibility
         earth.setVisible(true);
+        earth.stopBraking(); // Ensure normal physics (resume auto-rotate/low friction)
         // Rotation continues normally via inertia in earth.update()
     } else {
         // CASE 2: Left Hand Closed
         if (isRightHandPresent) {
             // CASE 2a: Brake Mode (Right hand is there, user likely wants to stop/inspect)
             earth.setVisible(true); // Keep visible
-            earth.stopRotation();   // KILL rotation immediately
+            earth.startBraking();   // Trigger smooth deceleration (High Friction)
         } else {
             // CASE 2b: Hide Mode (Right hand gone, user withdrawing)
             earth.setVisible(false); // Hide
+            earth.stopBraking();     // Ensure we don't carry braking state if we hide
             // DO NOT stop rotation. Let it persist so it spins when reappearing.
         }
     }

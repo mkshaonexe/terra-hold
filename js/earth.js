@@ -6,6 +6,7 @@ const CONFIG = {
     POSITION_LERP: 0.28,  // Fast snapping to palm
     SCALE_LERP: 0.18,     // Responsive zoom
     ROT_DAMPING: 0.996,   // Extremely low friction (spins for much longer)
+    BRAKE_DAMPING: 0.95,  // High friction (stops in ~3 seconds)
     AUTO_ROTATE_SPEED: 0.003,
     MANUAL_ROTATE_FACTOR: 0.08,
 };
@@ -34,6 +35,7 @@ class Earth {
         // Atmosphere
         this.atmosphere = null;
         this.autoRotateEnabled = true;
+        this.isBraking = false;
     }
 
 
@@ -165,8 +167,8 @@ class Earth {
         this.currentScale += (this.targetScale - this.currentScale) * CONFIG.SCALE_LERP;
         this.group.scale.setScalar(this.currentScale);
 
-        // Auto-rotation
-        if (this.autoRotateEnabled) {
+        // Auto-rotation (ONLY if not braking)
+        if (this.autoRotateEnabled && !this.isBraking) {
             this.model.rotation.y += CONFIG.AUTO_ROTATE_SPEED;
         }
 
@@ -174,11 +176,25 @@ class Earth {
         this.model.rotation.y += this.velocityRotY * CONFIG.MANUAL_ROTATE_FACTOR;
         this.model.rotation.x += this.velocityRotX * CONFIG.MANUAL_ROTATE_FACTOR;
 
-        // Dampen rotation (smooth deceleration)
-        this.velocityRotX *= CONFIG.ROT_DAMPING;
-        this.velocityRotY *= CONFIG.ROT_DAMPING;
+        // Dampen rotation (Smooth Deceleration)
+        // If braking -> use High Friction (BRAKE_DAMPING)
+        // If normal  -> use Low Friction (ROT_DAMPING)
+        const damping = this.isBraking ? CONFIG.BRAKE_DAMPING : CONFIG.ROT_DAMPING;
+
+        this.velocityRotX *= damping;
+        this.velocityRotY *= damping;
+
+        // Snap to zero if very slow
         if (Math.abs(this.velocityRotX) < 0.0001) this.velocityRotX = 0;
         if (Math.abs(this.velocityRotY) < 0.0001) this.velocityRotY = 0;
+    }
+
+    startBraking() {
+        this.isBraking = true;
+    }
+
+    stopBraking() {
+        this.isBraking = false;
     }
 
     isLoaded() {
