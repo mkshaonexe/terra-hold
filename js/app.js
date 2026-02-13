@@ -174,7 +174,7 @@ function handleLeftHand(data) {
     const y = -(data.palmCenter.y - 0.5) * sh;
 
     // Earth sits directly on the palm
-    earth.setPosition(x, y + 40, 0);
+    earth.setPosition(x, y + 120, 0);
 
     updateSkeleton(data.landmarks, 'left');
 }
