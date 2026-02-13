@@ -234,20 +234,28 @@ class HandTracker {
         const rawPalm = this._calculatePalmCenter(landmarks);
         this.leftPalm = this._smoothPosition(this.leftPalmBuffer, rawPalm);
 
-        // Check for Fist (Rock)
-        // Thumb is ignored for "rock" usually, or can be included. 
-        // Let's check Index, Middle, Ring, Pinky
-        const isFist = this._isFingerClosed(landmarks, 8, 6) &&   // Index
-            this._isFingerClosed(landmarks, 12, 10) &&  // Middle
-            this._isFingerClosed(landmarks, 16, 14) &&  // Ring
-            this._isFingerClosed(landmarks, 20, 18);    // Pinky
+        // Check Finger States (Index, Middle, Ring, Pinky)
+        const indexClosed = this._isFingerClosed(landmarks, 8, 6);
+        const middleClosed = this._isFingerClosed(landmarks, 12, 10);
+        const ringClosed = this._isFingerClosed(landmarks, 16, 14);
+        const pinkyClosed = this._isFingerClosed(landmarks, 20, 18);
 
-        // Left hand sends position data AND fist state
+        const closedCount = (indexClosed ? 1 : 0) + (middleClosed ? 1 : 0) + (ringClosed ? 1 : 0) + (pinkyClosed ? 1 : 0);
+
+        // "Close all fingers" -> 4 closed (ignoring thumb for stability)
+        const isFist = closedCount === 4;
+
+        // "Open at least 4 fingers" -> 0 closed (all 4 open)
+        const isOpenHand = closedCount === 0;
+
+        // Left hand sends position data AND gesture states
         if (this.onLeftHand) {
             this.onLeftHand({
                 palmCenter: this.leftPalm,
                 landmarks: landmarks, // Raw landmarks for skeleton
-                isFist: isFist
+                isFist: isFist,
+                isOpenHand: isOpenHand,
+                isRightHandDetected: this.rightHandDetected
             });
         }
     }
@@ -295,32 +303,27 @@ class HandTracker {
         }
 
 
-        // ---- STATE MACHINE: PINCH LOGIC ----
-        // 1. Detect rapid opening (CLUTCH)
-        const pinchVelocity = this.pinchDistance - this.prevPinchDistance;
-        const isOpeningFast = pinchVelocity > CONFIG.CLUTCH_VELOCITY_THRESHOLD;
+        // ---- ABSOLUTE PINCH LOGIC (Direct Mapping) ----
+        // 1. Calculate Normalized Pinch (0.0 to 1.0)
+        // Range: 0.02 (closed) to 0.18 (fully open)
+        const MIN_PINCH = 0.02;
+        const MAX_PINCH = 0.18;
 
-        // 2. State Transitions
-        if (!this.isZooming) {
-            // ENGAGE: Fingers close enough AND strict gesture is validation
-            if (this.pinchDistance < CONFIG.PINCH_THRESHOLD && isStrictGestureValid) {
-                this.isZooming = true;
-                this.startPinchDistance = this.pinchDistance;
-                if (this.debugEnabled) console.log('✅ ZOOM STARTED');
+        let pinchFactor = 0; // 0 = detected but closed, 1 = detected and open
+
+        if (isStrictGestureValid) {
+            // Clamp and normalize
+            const clampedDist = Math.max(MIN_PINCH, Math.min(MAX_PINCH, this.pinchDistance));
+            pinchFactor = (clampedDist - MIN_PINCH) / (MAX_PINCH - MIN_PINCH);
+
+            this.isZooming = true; // Re-purposing this flag to mean "Gesture Valid"
+
+            if (this.debugEnabled) {
+                console.log(`📏 Pinch Factor: ${pinchFactor.toFixed(2)} (Dist: ${this.pinchDistance.toFixed(3)})`);
             }
         } else {
-            // DISENGAGE: Fingers open wide OR opening too fast OR gesture becomes invalid
-            if (this.pinchDistance > CONFIG.PINCH_RELEASE_THRESHOLD || isOpeningFast || !isStrictGestureValid) {
-                this.isZooming = false;
-                if (this.debugEnabled && !isStrictGestureValid) console.log('🛑 ZOOM STOPPED (Invalid Gesture)');
-                else if (this.debugEnabled) console.log('⏹️ ZOOM STOPPED (Released)');
-            }
-        }
-
-        // 3. Calculate Factors
-        let scaleFactor = 1.0;
-        if (this.isZooming && this.startPinchDistance > 0.001) {
-            scaleFactor = this.pinchDistance / this.startPinchDistance;
+            this.isZooming = false;
+            pinchFactor = -1; // Invalid
         }
 
         // Rotation delta (only when right hand settled)
@@ -339,10 +342,10 @@ class HandTracker {
         if (this.onRightHand) {
             this.onRightHand({
                 palmCenter: this.rightPalm,
-                isZooming: this.isZooming,
-                scaleFactor: scaleFactor, // 1.0 = no change, 0.5 = half size, etc.
+                isZooming: this.isZooming, // Now means "Is Gesture Valid"
+                scaleFactor: pinchFactor,  // Now typically 0.0 to 1.0
                 rotationDelta: rotDelta,
-                landmarks: landmarks, // Raw landmarks for skeleton
+                landmarks: landmarks,
             });
         }
     }

@@ -140,12 +140,12 @@
                 <input type="checkbox" id="toggle-debug">
             </div>
             <div class="setting-row">
-                <label>Vertical Offset</label>
+                <label>Vertical Offset (<span id="offset-value">--</span>)</label>
                 <input type="range" id="range-offset-y" min="0" max="300" value="120" style="width: 100px;">
             </div>
             <div class="setting-row">
-                <label>Size (<span id="radius-value">--</span> km)</label>
-                <input type="range" id="range-scale" min="0.15" max="5.0" step="0.05" value="0.15"
+                <label>Size (<span id="radius-value">6,371</span> km)</label>
+                <input type="range" id="range-scale" min="0.392" max="3.532" step="0.001" value="1.0"
                     style="width: 100px;">
             </div>
             <button id="close-params" class="hud-btn-text">Close</button>

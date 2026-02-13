@@ -47,7 +47,7 @@ const settings = {
     showSkeleton: false,
     enableDebugLogs: false,
     earthOffsetY: parseInt(localStorage.getItem('earthOffsetY')) || 120,
-    earthScale: parseFloat(localStorage.getItem('earthScale')) || 0.15 // Default scale
+    earthScale: parseFloat(localStorage.getItem('earthScale')) || 1.0 // Default scale (6371 km)
 };
 
 // ============================================
@@ -177,8 +177,11 @@ function handleLeftHand(data) {
     const x = (0.5 - data.palmCenter.x) * sw;
     const y = -(data.palmCenter.y - 0.5) * sh;
 
-    // Earth sits directly on the palm
-    earth.setPosition(x, y + settings.earthOffsetY, 0);
+    // Earth sits directly on the palm (Dynamic Offset)
+    // baseRadius of Earth allows us to keep the bottom of the sphere at the offset distance
+    const baseRadius = 100; // From earth.js (desiredSize = 200 / 2)
+    const dynamicOffset = settings.earthOffsetY + (earth.currentScale * baseRadius);
+    earth.setPosition(x, y + dynamicOffset, 0);
 
     // ---- GESTURE LOGIC ----
     // 1. Single Hand (Rights Hand NOT active) + Fist -> Hide Earth
@@ -190,59 +193,62 @@ function handleLeftHand(data) {
         // Let's add a robust check.
     }
 
-    if (data.isFist) {
-        // Check if right hand is presently tracking (we can use a timestamp or flag)
-        // For now, let's rely on `handTracker.rightHandDetected` (we need to access it or track it here)
-        // Simpler: `handsAreActive` is barely useful. Let's track `isRightHandTracking`.
+    // Determine Visibility State
+    if (data.isRightHandDetected) {
+        // If right hand is present, Earth matches visibility state (usually true)
+        // But let's say we want it visible for interaction
+        earthVisibleState = true;
 
-        if (isRightHandTracking) {
+        if (data.isFist) {
             // Two hands -> Stop Rotation
             earth.setAutoRotation(false);
         } else {
-            // Single hand -> Hide Earth
-            earth.setVisible(false);
-        }
-    } else {
-        // Hand Open
-        if (isRightHandTracking) {
-            // Two hands -> Resume Rotation (if enabled in settings)
+            // Two hands -> Resume Rotation (if enabled)
             earth.setAutoRotation(settings.enableAutoRotate);
-        } else {
-            // Single hand -> Show Earth
-            earth.setVisible(true);
         }
+
+    } else {
+        // Single Left Hand Logic with Hysteresis
+        if (data.isFist) {
+            earthVisibleState = false;
+        } else if (data.isOpenHand) {
+            earthVisibleState = true;
+        }
+        // If between Open and Fist (1-3 fingers), keep `earthVisibleState` as is.
     }
+
+    earth.setVisible(earthVisibleState);
 
     updateSkeleton(data.landmarks, 'left');
 }
 
-let isRightHandTracking = false;
+let earthVisibleState = true; // Default to visible
 
 // RIGHT HAND → Scale + Rotation ONLY (never called with single hand)
 function handleRightHand(data) {
-    isRightHandTracking = true;
     earth.setVisible(true); // Always show Earth when right hand is active (overrides left fist hide)
 
     let isPinching = false;
 
     // ---- PINCH-TO-ZOOM (Proportional) ----
-    if (settings.enableZoom) {
-        // Use the new state-based logic: data.isZooming + data.scaleFactor
-        earth.setScaleFactor(data.scaleFactor, data.isZooming);
-        if (data.isZooming) {
-            isPinching = true;
-            // Update settings and slider while zooming
-            const newScale = earth.targetScale;
-            settings.earthScale = newScale;
-            // Debounce storage write? or just write on end?
-            // For now, let's update UI but maybe not storage every frame
-            const scaleSlider = document.getElementById('range-scale');
-            if (scaleSlider) scaleSlider.value = newScale;
-            updateRadiusDisplay(newScale);
-        } else {
-            // When zoom ends, save the final scale
-            localStorage.setItem('earthScale', settings.earthScale);
-        }
+    // ---- ABSOLUTE PINCH SCALING ----
+    if (settings.enableZoom && data.isZooming) {
+        // data.isZooming is true when the STRICT gesture is valid
+        // data.scaleFactor is 0.0 (closed) to 1.0 (open)
+        earth.setGestureScale(data.scaleFactor);
+
+        isPinching = true;
+
+        // Update settings and slider directly
+        const newScale = earth.targetScale;
+        settings.earthScale = newScale;
+
+        const scaleSlider = document.getElementById('range-scale');
+        if (scaleSlider) scaleSlider.value = newScale;
+        updateRadiusDisplay(newScale);
+    } else if (settings.enableZoom && !data.isZooming) {
+        // When gesture ends/invalid, just ensure we save current state if needed
+        // (Logic is stateless now, so stopping just leaves it at last scale)
     }
 
     // ---- ROTATION ----
@@ -265,7 +271,6 @@ function handleHandsLost() {
         handsAreActive = false;
         earth.setVisible(false); // Hide Earth when hands are lost
     }
-    isRightHandTracking = false;
     clearSkeleton();
 }
 
@@ -336,11 +341,13 @@ function setupUI() {
     if (offsetSlider) {
         // Set initial value from storage
         offsetSlider.value = settings.earthOffsetY;
+        updateOffsetDisplay(settings.earthOffsetY);
 
         offsetSlider.addEventListener('input', (e) => {
             const val = parseInt(e.target.value, 10);
             settings.earthOffsetY = val;
             localStorage.setItem('earthOffsetY', val);
+            updateOffsetDisplay(val);
         });
     }
 
@@ -518,6 +525,12 @@ async function boot() {
     animate();
 
     setTimeout(onFullyLoaded, 1500);
+}
+
+
+function updateOffsetDisplay(val) {
+    const el = document.getElementById('offset-value');
+    if (el) el.textContent = val;
 }
 
 boot();

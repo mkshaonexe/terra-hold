@@ -133,20 +133,20 @@ class Earth {
         this.targetPosition.set(x, y, z);
     }
 
-    setScaleFactor(factor, isZooming) {
-        if (isZooming) {
-            if (this.zoomStartScale === undefined || this.zoomStartScale === null) {
-                this.zoomStartScale = this.currentScale;
-            }
-            const newScale = this.zoomStartScale * factor;
-            this.targetScale = Math.max(0.15, Math.min(5.0, newScale));
-        } else {
-            this.zoomStartScale = null;
+    setGestureScale(factor) {
+        // factor is 0.0 (closed) to 1.0 (open)
+        // Map to scale range: ~0.4 to ~3.5
+        const MIN_SCALE = 0.5;
+        const MAX_SCALE = 3.5;
+
+        if (factor >= 0 && factor <= 1) {
+            const newScale = MIN_SCALE + (factor * (MAX_SCALE - MIN_SCALE));
+            this.targetScale = newScale;
         }
     }
 
     setScale(scale) {
-        this.targetScale = Math.max(0.15, Math.min(5.0, scale));
+        this.targetScale = Math.max(0.392, Math.min(3.532, scale));
     }
 
     addRotation(dx, dy) {
