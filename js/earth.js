@@ -5,7 +5,7 @@
 const CONFIG = {
     POSITION_LERP: 0.28,  // Fast snapping to palm
     SCALE_LERP: 0.18,     // Responsive zoom
-    ROT_DAMPING: 0.90,    // Smooth rotation decay
+    ROT_DAMPING: 0.98,    // Low friction (spins for a long time)
     AUTO_ROTATE_SPEED: 0.003,
     MANUAL_ROTATE_FACTOR: 0.08,
 };
@@ -135,9 +135,9 @@ class Earth {
 
     setGestureScale(factor) {
         // factor is 0.0 (closed) to 1.0 (open)
-        // Map to scale range: ~0.4 to ~3.5
-        const MIN_SCALE = 0.5;
-        const MAX_SCALE = 3.5;
+        // Map to scale range: ~0.392 (2500km) to ~3.532 (22500km)
+        const MIN_SCALE = 0.392;
+        const MAX_SCALE = 3.532;
 
         if (factor >= 0 && factor <= 1) {
             const newScale = MIN_SCALE + (factor * (MAX_SCALE - MIN_SCALE));
@@ -193,6 +193,15 @@ class Earth {
 
     setAutoRotation(enabled) {
         this.autoRotateEnabled = enabled;
+    }
+
+    stopRotation() {
+        this.velocityRotX = 0;
+        this.velocityRotY = 0;
+    }
+
+    isVisible() {
+        return this.group && this.group.visible;
     }
 }
 

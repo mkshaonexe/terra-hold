@@ -165,7 +165,7 @@ async function requestCamera() {
 function handleLeftHand(data) {
     if (!handsAreActive) {
         handsAreActive = true;
-        earth.setVisible(true); // Show Earth when left hand is detected
+        // earth.setVisible(true); // Don't show immediately, wait for strict check below
     }
 
     if (!settings.followHand) return;
@@ -187,50 +187,33 @@ function handleLeftHand(data) {
     // 1. Single Hand (Rights Hand NOT active) + Fist -> Hide Earth
     // 2. Two Hands (Right Hand active) + Fist -> Stop Rotation
 
-    if (!handsAreActive) {
-        // Technically `handsAreActive` is true if we are here, but let's check if right hand is controlling
-        // We need a way to know if right hand is present. `handsAreActive` is a global "any hand" flag.
-        // Let's add a robust check.
-    }
+    // Requirements:
+    // 1. Left Hand MUST be present AND have 4 fingers open (isOpenHand) -> VISIBLE
+    // 2. If Fist or partially open -> HIDDEN AND STOP ROTATION
 
-    // Determine Visibility State
-    if (data.isRightHandDetected) {
-        // If right hand is present, Earth matches visibility state (usually true)
-        // But let's say we want it visible for interaction
-        earthVisibleState = true;
-
-        if (data.isFist) {
-            // Two hands -> Stop Rotation
-            earth.setAutoRotation(false);
-        } else {
-            // Two hands -> Resume Rotation (if enabled)
-            earth.setAutoRotation(settings.enableAutoRotate);
-        }
-
-    } else {
-        // Single Left Hand Logic with Hysteresis
-        if (data.isFist) {
-            earthVisibleState = false;
-        } else if (data.isOpenHand) {
-            earthVisibleState = true;
-        }
-        // If between Open and Fist (1-3 fingers), keep `earthVisibleState` as is.
-    }
-
-    // Store Fist State Global for "Brake" logic
+    // Store global states
     isLeftFist = data.isFist;
+    isLeftHandOpen = data.isOpenHand; // 4 fingers open
 
-    earth.setVisible(earthVisibleState);
+    if (isLeftHandOpen) {
+        earth.setVisible(true);
+    } else {
+        earth.setVisible(false);
+        earth.stopRotation(); // Stop immediately if hidden
+    }
+
 
     updateSkeleton(data.landmarks, 'left');
 }
 
-let earthVisibleState = true; // Default to visible
 let isLeftFist = false;       // Track left hand brake state
+let isLeftHandOpen = false;   // Track left hand open state
 
 // RIGHT HAND → Scale + Rotation ONLY (never called with single hand)
 function handleRightHand(data) {
-    earth.setVisible(true); // Always show Earth when right hand is active (overrides left fist hide)
+    // strict check: if earth is hidden, right hand does nothing
+    if (!earth.isVisible()) return;
+
 
     let isPinching = false;
 
@@ -255,21 +238,21 @@ function handleRightHand(data) {
         // (Logic is stateless now, so stopping just leaves it at last scale)
     }
 
-    // ---- ROTATION ----
-    // Only rotate if NOT pinching (exclusive mode)
-    // ---- ROTATION (Horizontal Swipe Only) ----
-    // Only rotate if NOT pinching (exclusive mode)
-    // AND if Left Hand is NOT a fist (Brake)
+    // ---- ROTATION (Horizontal Swipe -> Turbo Spin) ----
+    // Requirements:
+    // 1. "One Direction" -> Always add positive velocity regardless of swipe dir
+    // 2. "Thousand times" -> High sensitivity
     if (settings.enableManualRotate && !isPinching && !isLeftFist) {
         const ROT_DEAD_ZONE = 0.003;
 
-        // Only check Horizontal Delta (x)
+        // Check Horizontal Delta
         if (Math.abs(data.rotationDelta.x) > ROT_DEAD_ZONE) {
-            // Map X movement to Y rotation (Yaw)
-            const rotY = data.rotationDelta.x * 15;
+            // "One Direction" Logic: Always spin positive (West-to-East)
+            // Use Math.abs() so back-and-forth swipes just pump up the speed
+            const speedMultiplier = 150; // Much faster!
+            const addedVelocity = Math.abs(data.rotationDelta.x) * speedMultiplier;
 
-            // Apply ONLY Yaw rotation (0 for Pitch/X-axis)
-            earth.addRotation(0, rotY);
+            earth.addRotation(0, addedVelocity);
         }
     }
 
@@ -277,10 +260,14 @@ function handleRightHand(data) {
 }
 
 function handleHandsLost() {
-    if (handsAreActive) {
-        handsAreActive = false;
-        earth.setVisible(false); // Hide Earth when hands are lost
-    }
+    // If ANY hands are lost, we re-evaluate, but usually this means NO hands
+    // If no hands -> Hide
+    handsAreActive = false;
+    isLeftFist = false;
+    isLeftHandOpen = false;
+    earth.setVisible(false);
+    earth.stopRotation(); // Stop immediately
+
     clearSkeleton();
 }
 
