@@ -205,7 +205,8 @@ function handleLeftHand(data) {
         if (isRightHandPresent) {
             // CASE 2a: Brake Mode (Right hand is there, user likely wants to stop/inspect)
             earth.setVisible(true); // Keep visible
-            earth.startBraking();   // Trigger smooth deceleration (High Friction)
+            earth.stopRotation();   // INSTANTLY stop all rotation (velocity = 0)
+            earth.startBraking();   // Trigger smooth deceleration (High Friction) - keeps auto-rotate paused
         } else {
             // CASE 2b: Hide Mode (Right hand gone, user withdrawing)
             earth.setVisible(false); // Hide
